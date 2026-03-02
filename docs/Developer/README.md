@@ -121,6 +121,15 @@ This directory contains developer-facing documentation for architecture, workflo
   - `tests/scenarios/run.py` (scenario harness executor)
   - `tests/live/test_github_sandbox_smoke.py` (GitHub sandbox smoke assertions)
   - `tests/live/run.py` (live smoke executor)
+- Operational-readiness artifacts and gate are defined under:
+  - `docs/Developer/operational-readiness.md` (release-readiness evidence record)
+  - `docs/Developer/service-level-policy.md` (SLO and error-budget policy source)
+  - `docs/Developer/alert-routing-matrix.json` (machine-readable severity and runbook routing)
+  - `docs/Developer/incident-response-policy.md` (incident lifecycle and corrective-action policy)
+  - `docs/Developer/release-control.json` (release freeze and exception status control)
+  - `docs/Developer/rollback-rehearsal-log.md` (rollback rehearsal evidence log)
+  - `tests/operations/run.py` (required runbook and evidence validator)
+  - `tests/operations/README.md` (operations gate index)
 - Frontend operations dashboard baseline is defined under:
   - `apps/frontend/src/main.ts`
   - `apps/frontend/src/styles.css`

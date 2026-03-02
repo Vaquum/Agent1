@@ -1,0 +1,51 @@
+{
+  "version": "1",
+  "severities": [
+    {
+      "severity": "sev1",
+      "owner": "agent1-oncall-primary",
+      "response_target_minutes": 15,
+      "escalation_target_minutes": 30,
+      "alerts": [
+        {
+          "name": "lease_violations",
+          "runbook": "docs/Developer/runbooks/lease-and-idempotency-incidents.md",
+          "include_trace_id": true,
+          "include_job_id": true
+        },
+        {
+          "name": "duplicate_side_effect_anomalies",
+          "runbook": "docs/Developer/runbooks/lease-and-idempotency-incidents.md",
+          "include_trace_id": true,
+          "include_job_id": true
+        },
+        {
+          "name": "comment_routing_failures",
+          "runbook": "docs/Developer/runbooks/review-thread-routing-failures.md",
+          "include_trace_id": true,
+          "include_job_id": true
+        }
+      ]
+    },
+    {
+      "severity": "sev2",
+      "owner": "agent1-oncall-secondary",
+      "response_target_minutes": 30,
+      "escalation_target_minutes": 60,
+      "alerts": [
+        {
+          "name": "outbox_backlog_growth",
+          "runbook": "docs/Developer/runbooks/lease-and-idempotency-incidents.md",
+          "include_trace_id": true,
+          "include_job_id": true
+        },
+        {
+          "name": "elevated_failed_transition_rates",
+          "runbook": "docs/Developer/runbooks/github-rate-limit-and-token-failures.md",
+          "include_trace_id": true,
+          "include_job_id": true
+        }
+      ]
+    }
+  ]
+}
