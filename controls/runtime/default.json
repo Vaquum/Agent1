@@ -1,0 +1,13 @@
+{
+  "version": "0.1.0",
+  "mode": "active",
+  "active_repositories": [
+    "Vaquum/Agent1"
+  ],
+  "require_sandbox_scope_for_dev_active": true,
+  "sandbox_label": "agent1-sandbox",
+  "sandbox_branch_prefix": "sandbox/",
+  "poll_interval_seconds": 30,
+  "watch_interval_seconds": 30,
+  "max_retry_attempts": 5
+}

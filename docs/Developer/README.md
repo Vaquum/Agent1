@@ -1,0 +1,108 @@
+# Agent1 Developer Docs
+
+This directory contains developer-facing documentation for architecture, workflows, testing, deployment, and runbooks.
+
+## Current Backend Baseline
+
+- Typed core contracts are defined under `apps/backend/src/agent1/core/contracts.py`.
+- Control schemas and loader validation are defined under:
+  - `apps/backend/src/agent1/core/control_schemas.py`
+  - `apps/backend/src/agent1/core/control_loader.py`
+- Startup is fail-fast on invalid controls through `apps/backend/src/agent1/main.py`.
+- Default control payloads live under `controls/*/default.json`.
+- Persistence baseline is defined under:
+  - `apps/backend/src/agent1/db/models.py`
+  - `apps/backend/src/agent1/db/repositories/`
+  - `apps/backend/src/agent1/core/services/persistence_service.py`
+  - `apps/backend/alembic/versions/20260302_000001_initial_persistence.py`
+  - `apps/backend/alembic/versions/20260303_000002_ingestion_cursors.py`
+  - `apps/backend/alembic/versions/20260303_000003_runtime_scope_guards.py`
+- Orchestration baseline is defined under:
+  - `apps/backend/src/agent1/core/workflow.py`
+  - `apps/backend/src/agent1/core/watcher.py`
+  - `apps/backend/src/agent1/core/orchestrator.py`
+- GitHub ingress baseline is defined under:
+  - `apps/backend/src/agent1/core/ingress_contracts.py`
+  - `apps/backend/src/agent1/adapters/github/client.py`
+  - `apps/backend/src/agent1/adapters/github/notification_mapper.py`
+  - `apps/backend/src/agent1/adapters/github/timeline_mapper.py`
+  - `apps/backend/src/agent1/adapters/github/check_run_mapper.py`
+  - `apps/backend/src/agent1/adapters/github/scanner.py`
+  - `apps/backend/src/agent1/core/services/comment_router.py`
+  - `apps/backend/src/agent1/core/services/ingress_cursor_store.py`
+  - `apps/backend/src/agent1/core/services/mention_action_executor.py`
+  - `apps/backend/src/agent1/core/ingress_normalizer.py`
+  - `apps/backend/src/agent1/core/ingress_coordinator.py`
+  - `apps/backend/src/agent1/core/services/ingress_worker.py`
+  - `apps/backend/src/agent1/main.py` (runtime bootstrap state wiring)
+- Notification scanning supports:
+  - pagination (`page` + `per_page`),
+  - incremental `since` cursor updates,
+  - durable cursor checkpointing through `ingestion_cursors`,
+  - PR timeline and check-run enrichment for higher-confidence review/CI events.
+- Ingress worker runtime supports:
+  - background polling loop started on FastAPI startup and stopped on shutdown,
+  - fail-fast startup ownership fencing for active runtime scopes via persisted `runtime_scope_guards`,
+  - poll interval sourced from `controls/runtime/default.json`,
+  - runtime mode propagation (`active`, `shadow`, `dry_run`) from controls into created jobs,
+  - active-scope repository filtering and dev sandbox-scope filtering during normalization,
+  - cycle heartbeat and failure logging per processing cycle.
+- First deterministic side-effect path supports:
+  - issue/PR mention detection in normalized ingress events,
+  - self-trigger prevention by ignoring comment-driven ingress events from the configured agent actor,
+  - bot-origin review-context filtering by ignoring comment-driven ingress events from configured actor suffixes,
+  - insufficient-context issue assignment clarification comment posting,
+  - issue update (`reason=comment`) ingestion signal for blocked-job context re-evaluation,
+  - reviewer-request side effects for `pr_reviewer` jobs with top-level PR review updates,
+  - reviewer follow-up loop on `pr_updated` events flagged with `requires_follow_up`,
+  - PR author feedback follow-up side effects for review comments on agent-authored PR jobs,
+  - PR author CI-triage side effects for failed checks on agent-authored PR jobs,
+  - Codex remediation task execution for PR author follow-up paths before outbound GitHub updates,
+  - zero-write handling in non-active runtime modes, with deterministic no-write state transitions,
+  - top-level comment response posting through GitHub API adapter,
+  - PR review-thread reply routing through comment target metadata (`thread_id`, `review_comment_id`, `path`, `line`, `side`),
+  - strict block behavior when review-thread metadata is missing and top-level fallback is disabled,
+  - deterministic clarification transition `awaiting_context -> blocked` after clarification request delivery,
+  - deterministic resume transition `blocked -> ready_to_execute -> awaiting_human_feedback` on sufficient context updates,
+  - deterministic reviewer follow-up transition `awaiting_human_feedback -> ready_to_execute -> awaiting_human_feedback`,
+  - deterministic state advancement `ready_to_execute -> executing -> awaiting_human_feedback`,
+  - blocked transition on comment post failure.
+- Codex execution baseline is defined under:
+  - `apps/backend/src/agent1/adapters/codex/contracts.py`
+  - `apps/backend/src/agent1/adapters/codex/client.py`
+  - `apps/backend/src/agent1/core/services/codex_executor.py`
+  - `apps/backend/src/agent1/main.py` (`application.state.codex_executor`)
+- Codex adapter guarantees:
+  - typed task input and stream event contracts,
+  - subprocess streaming for stdout/stderr event emission,
+  - explicit timeout and cancellation outcomes mapped to `ExecutionResult`.
+- Sentry runtime baseline is defined under:
+  - `apps/backend/src/agent1/core/services/sentry_runtime.py`
+  - `apps/backend/src/agent1/config/settings.py`
+  - `apps/backend/src/agent1/main.py` (`application.state.sentry_enabled`)
+- Sentry configuration environment keys:
+  - `SENTRY_PYTHON_DSN`
+  - `SENTRY_ENVIRONMENT`
+  - `SENTRY_RELEASE`
+  - `SENTRY_TRACES_SAMPLE_RATE`
+- Structured observability baseline is defined under:
+  - `apps/backend/src/agent1/core/services/trace_context.py`
+  - `apps/backend/src/agent1/core/services/structured_event_logger.py`
+  - `apps/backend/src/agent1/core/services/persistence_service.py`
+  - `apps/backend/src/agent1/main.py` (request trace middleware + response header)
+- Structured observability guarantees:
+  - request trace context is stored in runtime context and returned as `x-trace-id`,
+  - persisted `AgentEvent` records are emitted as structured JSON logs,
+  - secret-like keys are redacted from emitted event details.
+- OpenTelemetry runtime baseline is defined under:
+  - `apps/backend/src/agent1/core/services/telemetry_runtime.py`
+  - `apps/backend/src/agent1/core/services/codex_executor.py` (manual span around task execution)
+  - `apps/backend/src/agent1/core/ingress_coordinator.py` (manual span around processing cycle)
+  - `apps/backend/src/agent1/main.py` (`application.state.otel_enabled`)
+- OpenTelemetry configuration environment keys:
+  - `OTEL_SERVICE_NAME`
+  - `OTEL_TRACES_SAMPLER`
+  - `OTEL_PROPAGATORS`
+- OpenTelemetry behavior:
+  - FastAPI runtime is instrumented with OpenTelemetry middleware,
+  - spans flow through Sentry via `SentrySpanProcessor` when `SENTRY_PYTHON_DSN` is configured.

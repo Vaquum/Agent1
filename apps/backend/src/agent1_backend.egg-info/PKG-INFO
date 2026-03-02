@@ -1,0 +1,26 @@
+Metadata-Version: 2.4
+Name: agent1-backend
+Version: 0.1.0
+Summary: Agent1 FastAPI backend
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: alembic>=1.13.2
+Requires-Dist: fastapi>=0.115.0
+Requires-Dist: pydantic-settings>=2.5.2
+Requires-Dist: sqlalchemy>=2.0.35
+Requires-Dist: uvicorn>=0.30.6
+Provides-Extra: dev
+Requires-Dist: mypy>=1.11.2; extra == "dev"
+Requires-Dist: pytest>=8.3.3; extra == "dev"
+Requires-Dist: ruff>=0.6.7; extra == "dev"
+
+# Agent1 Backend
+
+FastAPI backend for Agent1 orchestration, APIs, and adapters.
+
+## Local commands
+
+- Install: `pip install -e ".[dev]"`
+- Run API: `uvicorn agent1.main:app --reload`
+- Lint: `ruff check src`
+- Typecheck: `mypy src`

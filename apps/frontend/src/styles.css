@@ -1,0 +1,26 @@
+:root {
+  font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: #1f2937;
+  background: #f8fafc;
+}
+
+body {
+  margin: 0;
+}
+
+.layout {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  gap: 0.5rem;
+}
+
+h1 {
+  margin: 0;
+  font-size: 2rem;
+}
+
+p {
+  margin: 0;
+  color: #475569;
+}
