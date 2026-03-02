@@ -10,17 +10,79 @@ body {
 
 .layout {
   display: grid;
-  place-items: center;
-  min-height: 100vh;
-  gap: 0.5rem;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
 }
 
-h1 {
+.header h1 {
   margin: 0;
   font-size: 2rem;
 }
 
-p {
+.status {
   margin: 0;
   color: #475569;
+}
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.metric-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 1rem;
+}
+
+.metric-card h2 {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #475569;
+}
+
+.metric-card p {
+  margin: 0.5rem 0 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.table-section {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 1rem;
+}
+
+.table-section h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+th,
+td {
+  text-align: left;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 0.5rem;
+  vertical-align: top;
+}
+
+thead th {
+  color: #475569;
+  font-weight: 600;
+}
+
+.empty-row {
+  color: #64748b;
 }

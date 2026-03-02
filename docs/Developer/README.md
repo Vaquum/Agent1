@@ -10,6 +10,10 @@ This directory contains developer-facing documentation for architecture, workflo
   - `apps/backend/src/agent1/core/control_loader.py`
 - Startup is fail-fast on invalid controls through `apps/backend/src/agent1/main.py`.
 - Default control payloads live under `controls/*/default.json`.
+- Dashboard API baseline is defined under:
+  - `apps/backend/src/agent1/api/dashboard.py`
+  - `apps/backend/src/agent1/api/dashboard_contracts.py`
+  - `apps/backend/src/agent1/core/services/dashboard_service.py`
 - Persistence baseline is defined under:
   - `apps/backend/src/agent1/db/models.py`
   - `apps/backend/src/agent1/db/repositories/`
@@ -114,3 +118,7 @@ This directory contains developer-facing documentation for architecture, workflo
   - `tests/scenarios/run.py` (scenario harness executor)
   - `tests/live/test_github_sandbox_smoke.py` (GitHub sandbox smoke assertions)
   - `tests/live/run.py` (live smoke executor)
+- Frontend operations dashboard baseline is defined under:
+  - `apps/frontend/src/main.ts`
+  - `apps/frontend/src/styles.css`
+  - `apps/frontend/src/main.test.ts`

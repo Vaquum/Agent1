@@ -126,5 +126,38 @@ class JobRepository:
         self._session.flush()
         return transition
 
+    def list_recent_jobs(self, limit: int) -> list[JobModel]:
+
+        '''
+        Create recent job list ordered by descending update timestamp.
+
+        Args:
+        limit (int): Maximum number of rows to return.
+
+        Returns:
+        list[JobModel]: Ordered recent job rows.
+        '''
+
+        return self._session.query(JobModel).order_by(JobModel.updated_at.desc()).limit(limit).all()
+
+    def list_recent_transitions(self, limit: int) -> list[JobTransitionModel]:
+
+        '''
+        Create recent job transition list ordered by descending transition timestamp.
+
+        Args:
+        limit (int): Maximum number of rows to return.
+
+        Returns:
+        list[JobTransitionModel]: Ordered recent transition rows.
+        '''
+
+        return (
+            self._session.query(JobTransitionModel)
+            .order_by(JobTransitionModel.transition_at.desc())
+            .limit(limit)
+            .all()
+        )
+
 
 __all__ = ['JobRepository']

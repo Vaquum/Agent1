@@ -69,3 +69,39 @@ def test_transition_job_state_records_transition(session_factory: sessionmaker[S
         assert fetched is not None
         assert fetched.state == JobState.EXECUTING
         assert transition_count == 1
+
+
+def test_list_recent_jobs_orders_by_updated_at_desc(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        repository = JobRepository(session)
+        repository.create_job(_create_record('job_recent_1'))
+        repository.create_job(_create_record('job_recent_2'))
+        session.commit()
+        repository.transition_job_state('job_recent_2', JobState.EXECUTING, 'recent_two')
+        session.commit()
+
+        recent_jobs = repository.list_recent_jobs(limit=1)
+
+        assert len(recent_jobs) == 1
+        assert recent_jobs[0].job_id == 'job_recent_2'
+
+
+def test_list_recent_transitions_orders_by_transition_at_desc(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        repository = JobRepository(session)
+        repository.create_job(_create_record('job_transition_1'))
+        repository.create_job(_create_record('job_transition_2'))
+        session.commit()
+        repository.transition_job_state('job_transition_1', JobState.EXECUTING, 'first_transition')
+        session.commit()
+        repository.transition_job_state('job_transition_2', JobState.EXECUTING, 'second_transition')
+        session.commit()
+
+        recent_transitions = repository.list_recent_transitions(limit=1)
+
+        assert len(recent_transitions) == 1
+        assert recent_transitions[0].job_id == 'job_transition_2'

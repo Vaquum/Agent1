@@ -8,6 +8,7 @@ from fastapi import Response
 from fastapi import FastAPI
 from starlette.middleware.base import RequestResponseEndpoint
 
+from agent1.api.dashboard import router as dashboard_router
 from agent1.api.health import router as health_router
 from agent1.config.settings import get_settings
 from agent1.core.contracts import EnvironmentName
@@ -157,6 +158,7 @@ def create_application() -> FastAPI:
     application.state.ingress_worker = ingress_worker
     application.state.runtime_scope_guard = runtime_scope_guard
     application.state.codex_executor = codex_executor
+    application.include_router(dashboard_router)
     application.include_router(health_router)
     return application
 

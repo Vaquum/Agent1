@@ -37,5 +37,24 @@ class EventRepository:
         self._session.flush()
         return model
 
+    def list_recent_events(self, limit: int) -> list[EventJournalModel]:
+
+        '''
+        Create recent event journal list ordered by descending timestamp.
+
+        Args:
+        limit (int): Maximum number of recent rows to return.
+
+        Returns:
+        list[EventJournalModel]: Ordered recent event journal rows.
+        '''
+
+        return (
+            self._session.query(EventJournalModel)
+            .order_by(EventJournalModel.timestamp.desc())
+            .limit(limit)
+            .all()
+        )
+
 
 __all__ = ['EventRepository']
