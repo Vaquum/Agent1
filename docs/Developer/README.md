@@ -109,3 +109,8 @@ This directory contains developer-facing documentation for architecture, workflo
 - CI gate workflows are defined under:
   - `.github/workflows/pr-gates.yml` (PR quality and environment safety checks)
   - `.github/workflows/nightly-full-suite.yml` (nightly backend and frontend full-suite execution)
+- Scenario and live smoke runners are defined under:
+  - `tests/scenarios/catalog.json` (deterministic scenario ID to pytest node binding)
+  - `tests/scenarios/run.py` (scenario harness executor)
+  - `tests/live/test_github_sandbox_smoke.py` (GitHub sandbox smoke assertions)
+  - `tests/live/run.py` (live smoke executor)
