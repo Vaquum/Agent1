@@ -11,6 +11,9 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+*.egg-info/
+agent1.db
+apps/backend/agent1.db
 
 .DS_Store
 .env
