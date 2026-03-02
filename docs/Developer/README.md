@@ -106,3 +106,6 @@ This directory contains developer-facing documentation for architecture, workflo
 - OpenTelemetry behavior:
   - FastAPI runtime is instrumented with OpenTelemetry middleware,
   - spans flow through Sentry via `SentrySpanProcessor` when `SENTRY_PYTHON_DSN` is configured.
+- CI gate workflows are defined under:
+  - `.github/workflows/pr-gates.yml` (PR quality and environment safety checks)
+  - `.github/workflows/nightly-full-suite.yml` (nightly backend and frontend full-suite execution)

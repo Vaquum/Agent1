@@ -1,0 +1,102 @@
+name: pr-gates
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-gates-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-quality:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Ruff
+        run: ruff check .
+
+      - name: Mypy
+        run: MYPYPATH=src mypy -p agent1
+
+      - name: Pytest
+        run: pytest -q
+
+  frontend-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.6.1
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Frontend lint
+        run: pnpm --filter @agent1/frontend lint
+
+      - name: Frontend typecheck
+        run: pnpm --filter @agent1/frontend typecheck
+
+      - name: Frontend tests
+        run: pnpm --filter @agent1/frontend test
+
+      - name: Frontend build
+        run: pnpm --filter @agent1/frontend build
+
+  environment-safety:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Environment safety checks
+        run: |
+          pytest -q \
+            tests/test_runtime_scope_guard.py \
+            tests/test_ingress_normalizer.py::test_normalizer_filters_dev_active_non_sandbox_scope \
+            tests/test_ingress_normalizer.py::test_normalizer_accepts_dev_active_sandbox_scope \
+            tests/test_mention_action_executor.py::test_mention_action_executor_shadow_mode_skips_write_side_effects \
+            tests/test_mention_action_executor.py::test_mention_action_executor_shadow_mode_keeps_author_ci_no_write

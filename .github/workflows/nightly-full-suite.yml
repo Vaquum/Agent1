@@ -1,0 +1,65 @@
+name: nightly-full-suite
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-full-suite-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-full-suite:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Backend quality gates
+        run: |
+          ruff check .
+          MYPYPATH=src mypy -p agent1
+          pytest -q
+
+  frontend-full-suite:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.6.1
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Frontend quality gates
+        run: |
+          pnpm --filter @agent1/frontend lint
+          pnpm --filter @agent1/frontend typecheck
+          pnpm --filter @agent1/frontend test
+          pnpm --filter @agent1/frontend build

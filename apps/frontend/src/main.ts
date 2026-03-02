@@ -1,12 +1,16 @@
 import './styles.css'
 
-const app = document.querySelector<HTMLDivElement>('#app')
+export const DASHBOARD_SCAFFOLD_HTML = `
+  <main class='layout'>
+    <h1>Agent1</h1>
+    <p>Operations dashboard scaffold is ready.</p>
+  </main>
+`
+
+const app = typeof document === 'undefined'
+  ? null
+  : document.querySelector<HTMLDivElement>('#app')
 
 if (app) {
-  app.innerHTML = `
-    <main class="layout">
-      <h1>Agent1</h1>
-      <p>Operations dashboard scaffold is ready.</p>
-    </main>
-  `
+  app.innerHTML = DASHBOARD_SCAFFOLD_HTML
 }
