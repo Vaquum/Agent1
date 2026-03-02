@@ -14,6 +14,9 @@ This directory contains developer-facing documentation for architecture, workflo
   - `apps/backend/src/agent1/api/dashboard.py`
   - `apps/backend/src/agent1/api/dashboard_contracts.py`
   - `apps/backend/src/agent1/core/services/dashboard_service.py`
+- Dashboard API supports:
+  - `GET /dashboard/overview` with shared section pagination (`limit`, `offset`) and optional filters (`entity_key`, `job_id`, `trace_id`, `status`),
+  - `GET /dashboard/jobs/{job_id}/timeline` for per-job transition/event drill-down views.
 - Persistence baseline is defined under:
   - `apps/backend/src/agent1/db/models.py`
   - `apps/backend/src/agent1/db/repositories/`
@@ -122,3 +125,9 @@ This directory contains developer-facing documentation for architecture, workflo
   - `apps/frontend/src/main.ts`
   - `apps/frontend/src/styles.css`
   - `apps/frontend/src/main.test.ts`
+- Frontend dashboard currently supports:
+  - filter controls for `entity_key`, `job_id`, `trace_id`, and `status`,
+  - paginated overview navigation,
+  - job timeline drill-down with dedicated timeline paging,
+  - timeline event inspection with rendered `details` payload and correlated transition view by event `details.reason`,
+  - trace pivot action from selected timeline event back into overview filters.

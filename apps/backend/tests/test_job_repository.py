@@ -105,3 +105,48 @@ def test_list_recent_transitions_orders_by_transition_at_desc(
 
         assert len(recent_transitions) == 1
         assert recent_transitions[0].job_id == 'job_transition_2'
+
+
+def test_recent_list_queries_apply_filters_and_counts(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        repository = JobRepository(session)
+        repository.create_job(_create_record('job_filter_1'))
+        repository.create_job(
+            JobRecord(
+                job_id='job_filter_2',
+                entity_key='Vaquum/Agent1#2',
+                kind=JobKind.ISSUE,
+                state=JobState.AWAITING_CONTEXT,
+                idempotency_key='idem_job_filter_2',
+                lease_epoch=0,
+                environment=EnvironmentName.DEV,
+                mode=RuntimeMode.ACTIVE,
+            )
+        )
+        session.commit()
+        repository.transition_job_state('job_filter_1', JobState.EXECUTING, 'first')
+        session.commit()
+        repository.transition_job_state('job_filter_2', JobState.EXECUTING, 'second')
+        session.commit()
+
+        filtered_jobs = repository.list_recent_jobs(
+            limit=10,
+            offset=0,
+            entity_key='Vaquum/Agent1#2',
+        )
+        filtered_transitions = repository.list_recent_transitions(
+            limit=10,
+            offset=0,
+            entity_key='Vaquum/Agent1#2',
+        )
+        filtered_job_count = repository.count_jobs(entity_key='Vaquum/Agent1#2')
+        filtered_transition_count = repository.count_transitions(entity_key='Vaquum/Agent1#2')
+
+        assert len(filtered_jobs) == 1
+        assert filtered_jobs[0].job_id == 'job_filter_2'
+        assert len(filtered_transitions) == 1
+        assert filtered_transitions[0].job_id == 'job_filter_2'
+        assert filtered_job_count == 1
+        assert filtered_transition_count == 1

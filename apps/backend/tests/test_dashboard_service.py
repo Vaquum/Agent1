@@ -83,6 +83,131 @@ def test_dashboard_service_returns_recent_snapshot(
     assert len(overview.jobs) == 1
     assert len(overview.transitions) == 1
     assert len(overview.events) == 1
+    assert overview.jobs_page.total == 2
+    assert overview.transitions_page.total == 2
+    assert overview.events_page.total == 2
+    assert overview.filters.entity_key is None
+    assert overview.filters.job_id is None
+    assert overview.filters.trace_id is None
+    assert overview.filters.status is None
     assert overview.jobs[0].job_id == 'job_dashboard_2'
     assert overview.transitions[0].job_id == 'job_dashboard_2'
     assert overview.events[0].trace_id == 'trc_dashboard_2'
+
+
+def test_dashboard_service_applies_overview_filters(
+    session_factory: sessionmaker[Session],
+) -> None:
+    persistence_service = PersistenceService(session_factory=session_factory)
+    persistence_service.create_job(_create_job_record('job_dashboard_filter_1', 'Vaquum/Agent1#201'))
+    persistence_service.create_job(_create_job_record('job_dashboard_filter_2', 'Vaquum/Agent1#202'))
+    persistence_service.transition_job_state(
+        'job_dashboard_filter_1',
+        to_state=JobState.EXECUTING,
+        reason='filter_one',
+    )
+    persistence_service.transition_job_state(
+        'job_dashboard_filter_2',
+        to_state=JobState.EXECUTING,
+        reason='filter_two',
+    )
+    now = datetime.now(timezone.utc)
+    persistence_service.append_event(
+        AgentEvent(
+            timestamp=now - timedelta(minutes=1),
+            environment=EnvironmentName.DEV,
+            trace_id='trc_dashboard_filter_1',
+            job_id='job_dashboard_filter_1',
+            entity_key='Vaquum/Agent1#201',
+            source=EventSource.AGENT,
+            event_type=EventType.STATE_TRANSITION,
+            status=EventStatus.OK,
+            details={'reason': 'filter_one'},
+        )
+    )
+    persistence_service.append_event(
+        AgentEvent(
+            timestamp=now,
+            environment=EnvironmentName.DEV,
+            trace_id='trc_dashboard_filter_2',
+            job_id='job_dashboard_filter_2',
+            entity_key='Vaquum/Agent1#202',
+            source=EventSource.AGENT,
+            event_type=EventType.STATE_TRANSITION,
+            status=EventStatus.ERROR,
+            details={'reason': 'filter_two'},
+        )
+    )
+
+    dashboard_service = DashboardService(session_factory=session_factory)
+    overview = dashboard_service.get_overview(
+        limit=10,
+        offset=0,
+        entity_key='Vaquum/Agent1#202',
+        trace_id='trc_dashboard_filter_2',
+        status=EventStatus.ERROR,
+    )
+
+    assert len(overview.jobs) == 1
+    assert overview.jobs[0].job_id == 'job_dashboard_filter_2'
+    assert len(overview.transitions) == 1
+    assert overview.transitions[0].job_id == 'job_dashboard_filter_2'
+    assert len(overview.events) == 1
+    assert overview.events[0].trace_id == 'trc_dashboard_filter_2'
+    assert overview.filters.entity_key == 'Vaquum/Agent1#202'
+    assert overview.filters.trace_id == 'trc_dashboard_filter_2'
+    assert overview.filters.status == EventStatus.ERROR
+
+
+def test_dashboard_service_returns_job_timeline(
+    session_factory: sessionmaker[Session],
+) -> None:
+    persistence_service = PersistenceService(session_factory=session_factory)
+    persistence_service.create_job(_create_job_record('job_dashboard_timeline_1', 'Vaquum/Agent1#301'))
+    persistence_service.transition_job_state(
+        'job_dashboard_timeline_1',
+        to_state=JobState.EXECUTING,
+        reason='timeline_start',
+    )
+    now = datetime.now(timezone.utc)
+    persistence_service.append_event(
+        AgentEvent(
+            timestamp=now,
+            environment=EnvironmentName.DEV,
+            trace_id='trc_dashboard_timeline_1',
+            job_id='job_dashboard_timeline_1',
+            entity_key='Vaquum/Agent1#301',
+            source=EventSource.AGENT,
+            event_type=EventType.STATE_TRANSITION,
+            status=EventStatus.OK,
+            details={'reason': 'timeline_start'},
+        )
+    )
+
+    dashboard_service = DashboardService(session_factory=session_factory)
+    timeline = dashboard_service.get_job_timeline(
+        job_id='job_dashboard_timeline_1',
+        limit=10,
+        offset=0,
+    )
+
+    assert timeline is not None
+    assert timeline.job.job_id == 'job_dashboard_timeline_1'
+    assert timeline.transitions_page.total == 1
+    assert timeline.events_page.total == 1
+    assert len(timeline.transitions) == 1
+    assert len(timeline.events) == 1
+
+
+def test_dashboard_service_returns_none_for_missing_timeline_job(
+    session_factory: sessionmaker[Session],
+) -> None:
+    dashboard_service = DashboardService(session_factory=session_factory)
+
+    timeline = dashboard_service.get_job_timeline(
+        job_id='missing_job',
+        limit=10,
+        offset=0,
+    )
+
+    assert timeline is None

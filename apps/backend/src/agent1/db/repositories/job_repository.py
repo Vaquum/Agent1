@@ -126,38 +126,117 @@ class JobRepository:
         self._session.flush()
         return transition
 
-    def list_recent_jobs(self, limit: int) -> list[JobModel]:
+    def list_recent_jobs(
+        self,
+        limit: int,
+        offset: int = 0,
+        entity_key: str | None = None,
+        job_id: str | None = None,
+    ) -> list[JobModel]:
 
         '''
         Create recent job list ordered by descending update timestamp.
 
         Args:
         limit (int): Maximum number of rows to return.
+        offset (int): Pagination offset for recent rows.
+        entity_key (str | None): Optional entity key filter.
+        job_id (str | None): Optional job identifier filter.
 
         Returns:
         list[JobModel]: Ordered recent job rows.
         '''
 
-        return self._session.query(JobModel).order_by(JobModel.updated_at.desc()).limit(limit).all()
+        query = self._session.query(JobModel)
+        if entity_key is not None and entity_key.strip() != '':
+            query = query.filter(JobModel.entity_key == entity_key.strip())
+        if job_id is not None and job_id.strip() != '':
+            query = query.filter(JobModel.job_id == job_id.strip())
 
-    def list_recent_transitions(self, limit: int) -> list[JobTransitionModel]:
+        return query.order_by(JobModel.updated_at.desc()).offset(offset).limit(limit).all()
+
+    def count_jobs(
+        self,
+        entity_key: str | None = None,
+        job_id: str | None = None,
+    ) -> int:
+
+        '''
+        Create job row count for optional dashboard filters.
+
+        Args:
+        entity_key (str | None): Optional entity key filter.
+        job_id (str | None): Optional job identifier filter.
+
+        Returns:
+        int: Job row count matching provided filters.
+        '''
+
+        query = self._session.query(JobModel)
+        if entity_key is not None and entity_key.strip() != '':
+            query = query.filter(JobModel.entity_key == entity_key.strip())
+        if job_id is not None and job_id.strip() != '':
+            query = query.filter(JobModel.job_id == job_id.strip())
+
+        return query.count()
+
+    def list_recent_transitions(
+        self,
+        limit: int,
+        offset: int = 0,
+        entity_key: str | None = None,
+        job_id: str | None = None,
+    ) -> list[JobTransitionModel]:
 
         '''
         Create recent job transition list ordered by descending transition timestamp.
 
         Args:
         limit (int): Maximum number of rows to return.
+        offset (int): Pagination offset for recent rows.
+        entity_key (str | None): Optional entity key filter.
+        job_id (str | None): Optional job identifier filter.
 
         Returns:
         list[JobTransitionModel]: Ordered recent transition rows.
         '''
 
-        return (
-            self._session.query(JobTransitionModel)
-            .order_by(JobTransitionModel.transition_at.desc())
-            .limit(limit)
-            .all()
-        )
+        query = self._session.query(JobTransitionModel)
+        if entity_key is not None and entity_key.strip() != '':
+            query = query.join(JobModel, JobModel.job_id == JobTransitionModel.job_id).filter(
+                JobModel.entity_key == entity_key.strip(),
+            )
+        if job_id is not None and job_id.strip() != '':
+            query = query.filter(JobTransitionModel.job_id == job_id.strip())
+
+        return query.order_by(JobTransitionModel.transition_at.desc()).offset(offset).limit(limit).all()
+
+    def count_transitions(
+        self,
+        entity_key: str | None = None,
+        job_id: str | None = None,
+    ) -> int:
+
+        '''
+        Create transition row count for optional dashboard filters.
+
+        Args:
+        entity_key (str | None): Optional entity key filter.
+        job_id (str | None): Optional job identifier filter.
+
+        Returns:
+        int: Transition row count matching provided filters.
+        '''
+
+        query = self._session.query(JobTransitionModel)
+        if entity_key is not None and entity_key.strip() != '':
+            query = query.join(JobModel, JobModel.job_id == JobTransitionModel.job_id).filter(
+                JobModel.entity_key == entity_key.strip(),
+            )
+        if job_id is not None and job_id.strip() != '':
+            query = query.filter(JobTransitionModel.job_id == job_id.strip())
+
+        return query.count()
 
 
 __all__ = ['JobRepository']

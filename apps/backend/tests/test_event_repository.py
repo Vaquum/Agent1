@@ -75,3 +75,54 @@ def test_list_recent_events_orders_descending_by_timestamp(
 
         assert len(recent_events) == 1
         assert recent_events[0].trace_id == 'trc_recent_2'
+
+
+def test_list_recent_events_applies_filters_and_count(
+    session_factory: sessionmaker[Session],
+) -> None:
+    with session_factory() as session:
+        repository = EventRepository(session)
+        repository.append_event(
+            AgentEvent(
+                timestamp=datetime.now(timezone.utc),
+                environment=EnvironmentName.DEV,
+                trace_id='trc_filter_1',
+                job_id='job_filter_1',
+                entity_key='Vaquum/Agent1#21',
+                source=EventSource.GITHUB,
+                event_type=EventType.STATE_TRANSITION,
+                status=EventStatus.OK,
+                details={'message': 'first'},
+            )
+        )
+        repository.append_event(
+            AgentEvent(
+                timestamp=datetime.now(timezone.utc),
+                environment=EnvironmentName.DEV,
+                trace_id='trc_filter_2',
+                job_id='job_filter_2',
+                entity_key='Vaquum/Agent1#22',
+                source=EventSource.AGENT,
+                event_type=EventType.EXECUTION_RESULT,
+                status=EventStatus.ERROR,
+                details={'message': 'second'},
+            )
+        )
+        session.commit()
+
+        filtered_events = repository.list_recent_events(
+            limit=10,
+            offset=0,
+            entity_key='Vaquum/Agent1#22',
+            trace_id='trc_filter_2',
+            status=EventStatus.ERROR,
+        )
+        filtered_count = repository.count_events(
+            entity_key='Vaquum/Agent1#22',
+            trace_id='trc_filter_2',
+            status=EventStatus.ERROR,
+        )
+
+        assert len(filtered_events) == 1
+        assert filtered_events[0].job_id == 'job_filter_2'
+        assert filtered_count == 1

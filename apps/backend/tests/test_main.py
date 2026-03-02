@@ -26,3 +26,4 @@ def test_create_application_sets_runtime_ingress_coordinator() -> None:
     assert application.state.trace_header_name == TRACE_HEADER_NAME
     route_paths = {route.path for route in application.routes}
     assert '/dashboard/overview' in route_paths
+    assert '/dashboard/jobs/{job_id}/timeline' in route_paths
