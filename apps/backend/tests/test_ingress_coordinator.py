@@ -73,7 +73,9 @@ def test_runtime_ingress_coordinator_uses_persistent_cursor_store() -> None:
     assert scanner.get_cursor_key() == GITHUB_NOTIFICATION_CURSOR_KEY
 
 
-def test_ingress_coordinator_creates_jobs_with_runtime_mode() -> None:
+def test_ingress_coordinator_creates_jobs_with_runtime_mode(
+    session_factory: sessionmaker[Session],
+) -> None:
     scanner = InMemoryGitHubIngressScanner(
         [
             GitHubIngressEvent(
@@ -88,8 +90,11 @@ def test_ingress_coordinator_creates_jobs_with_runtime_mode() -> None:
             )
         ]
     )
+    persistence_service = PersistenceService(session_factory=session_factory)
+    orchestrator = JobOrchestrator(persistence_service=persistence_service)
     coordinator = GitHubIngressCoordinator(
         scanner=scanner,
+        orchestrator=orchestrator,
         normalizer=GitHubIngressNormalizer(),
         runtime_mode=RuntimeMode.SHADOW,
     )
