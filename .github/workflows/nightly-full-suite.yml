@@ -84,7 +84,6 @@ jobs:
         run: python tests/scenarios/run.py
 
   live-sandbox-smoke:
-    if: ${{ secrets.AGENT1_LIVE_GITHUB_TOKEN != '' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
