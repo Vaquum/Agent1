@@ -1,0 +1,40 @@
+{
+  "version": "0.1.0",
+  "rules": [
+    {
+      "job_kind": "issue",
+      "terminal_states": [
+        "completed",
+        "blocked"
+      ]
+    },
+    {
+      "job_kind": "pr_author",
+      "terminal_states": [
+        "completed",
+        "blocked"
+      ]
+    },
+    {
+      "job_kind": "pr_reviewer",
+      "terminal_states": [
+        "completed",
+        "blocked"
+      ]
+    },
+    {
+      "job_kind": "review",
+      "terminal_states": [
+        "completed",
+        "blocked"
+      ]
+    },
+    {
+      "job_kind": "ci",
+      "terminal_states": [
+        "completed",
+        "blocked"
+      ]
+    }
+  ]
+}

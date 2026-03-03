@@ -1,0 +1,6 @@
+{
+  "version": "0.1.0",
+  "require_review_thread_reply": true,
+  "allow_top_level_pr_fallback": false,
+  "issue_comment_mode": "top_level_only"
+}

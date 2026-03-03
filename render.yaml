@@ -1,0 +1,51 @@
+services:
+  - type: web
+    name: agent1-backend
+    env: docker
+    plan: starter
+    dockerContext: .
+    dockerfilePath: ./apps/backend/Dockerfile
+    autoDeploy: true
+    healthCheckPath: /health
+    preDeployCommand: cd /app/apps/backend && alembic upgrade head
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: GITHUB_READ_TOKEN
+        sync: false
+      - key: GITHUB_WRITE_TOKEN
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: GITHUB_USER
+        value: zero-bang
+      - key: GITHUB_API_URL
+        value: https://api.github.com
+      - key: SENTRY_PYTHON_DSN
+        sync: false
+      - key: SENTRY_ENVIRONMENT
+        value: prod
+      - key: SENTRY_RELEASE
+        sync: false
+      - key: SENTRY_TRACES_SAMPLE_RATE
+        value: "0.2"
+      - key: OTEL_SERVICE_NAME
+        value: agent1-backend
+      - key: OTEL_TRACES_SAMPLER
+        value: always_on
+      - key: OTEL_PROPAGATORS
+        value: tracecontext,baggage
+
+  - type: web
+    name: agent1-frontend
+    env: docker
+    plan: starter
+    dockerContext: .
+    dockerfilePath: ./apps/frontend/Dockerfile
+    autoDeploy: true
+    envVars:
+      - key: VITE_AGENT1_API_BASE_URL
+        fromService:
+          type: web
+          name: agent1-backend
+          property: url

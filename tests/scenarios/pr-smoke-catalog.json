@@ -1,0 +1,13 @@
+{
+  "backend_scenario_ids": [
+    "SCN_ISSUE_MENTION_RESPONSE",
+    "SCN_ASSIGNMENT_CLARIFICATION_RESUME",
+    "SCN_REVIEW_THREAD_REPLY_IN_PLACE",
+    "SCN_SHADOW_MODE_NO_WRITE_FEEDBACK"
+  ],
+  "frontend_playwright_specs": [
+    "tests/e2e/overview-shell.spec.ts",
+    "tests/e2e/operator-overview-and-timeline.spec.ts",
+    "tests/e2e/operator-trace-pivot-and-event-detail.spec.ts"
+  ]
+}

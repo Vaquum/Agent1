@@ -1,0 +1,50 @@
+{
+  "version": "0.1.0",
+  "workflow_job_permissions": {
+    ".github/workflows/pr-gates.yml": {
+      "backend-quality": {
+        "contents": "read"
+      },
+      "frontend-quality": {
+        "contents": "read"
+      },
+      "frontend-playwright": {
+        "contents": "read"
+      },
+      "environment-safety": {
+        "contents": "read"
+      },
+      "scenario-smoke": {
+        "contents": "read"
+      },
+      "operational-readiness": {
+        "contents": "read"
+      }
+    },
+    ".github/workflows/nightly-full-suite.yml": {
+      "backend-full-suite": {
+        "contents": "read"
+      },
+      "frontend-full-suite": {
+        "contents": "read"
+      },
+      "frontend-playwright": {
+        "contents": "read"
+      },
+      "scenario-full-suite": {
+        "contents": "read"
+      },
+      "operational-readiness": {
+        "contents": "read"
+      },
+      "live-sandbox-smoke": {
+        "contents": "read"
+      }
+    },
+    ".github/workflows/release-promotion-gate.yml": {
+      "release-promotion-gate": {
+        "contents": "read"
+      }
+    }
+  }
+}

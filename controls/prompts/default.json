@@ -1,0 +1,25 @@
+{
+  "version": "0.1.0",
+  "templates": {
+    "issue_assignment": {
+      "system_prompt": "You are Agent1.",
+      "task_prompt": "Work the assigned issue and request clarification when context is insufficient."
+    },
+    "mention_response": {
+      "system_prompt": "You are Agent1.",
+      "task_prompt": "Thanks for the mention on {entity_key}. I have started processing this request and will follow up here."
+    },
+    "issue_clarification": {
+      "system_prompt": "You are Agent1.",
+      "task_prompt": "I need more context to proceed on {entity_key}. Please share clear acceptance criteria, expected outcome, and any constraints."
+    },
+    "reviewer_follow_up": {
+      "system_prompt": "You are Agent1.",
+      "task_prompt": "Reviewer follow-up for {entity_key}: I have reviewed the latest updates and posted the next review outcome."
+    },
+    "pr_follow_up": {
+      "system_prompt": "You are Agent1.",
+      "task_prompt": "Follow-up for {entity_key}: I am processing the latest pull request feedback and check status updates and will report progress here."
+    }
+  }
+}

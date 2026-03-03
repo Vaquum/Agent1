@@ -1,0 +1,293 @@
+# Agent1 Developer Docs
+
+This directory contains developer-facing documentation for architecture, workflows, testing, deployment, and runbooks.
+
+## Current Backend Baseline
+
+- Typed core contracts are defined under `apps/backend/src/agent1/core/contracts.py`.
+- Control schemas and loader validation are defined under:
+  - `apps/backend/src/agent1/core/control_schemas.py`
+  - `apps/backend/src/agent1/core/control_loader.py`
+- Startup is fail-fast on invalid controls through `apps/backend/src/agent1/main.py`.
+- Default control payloads live under `controls/*/default.json` plus `controls/policies/permission-matrix.json` and `controls/policies/protected-approval.json`.
+- Runtime controls now include machine-readable progressive-rollout stages and required health-signal mappings under `controls/runtime/default.json` (`rollout_policy`).
+- Rollout stage-gate evaluation is implemented under `apps/backend/src/agent1/core/services/rollout_stage_gate.py` and wired into application runtime state.
+- Rollout guard rollback-trigger decisions are implemented under `apps/backend/src/agent1/core/services/rollout_guard_service.py` with active-mode downgrade semantics (`active -> shadow`) on failed stage gates.
+- Runtime controls now include machine-readable stop-the-line threshold rules under `controls/runtime/default.json` (`stop_the_line_policy`) for severe error, lease, duplicate-side-effect, and policy-failure signals.
+- Runtime controls now include machine-readable release-promotion preconditions under `controls/runtime/default.json` (`release_promotion_policy`) linked to readiness evidence and policy state.
+- Runtime controls now include machine-readable retention policy coverage under `controls/runtime/default.json` (`retention_policy`) for `logs`, `traces`, and `test_artifacts` across `dev`/`prod`/`ci`.
+- Retention purge execution baseline is implemented under `apps/backend/src/agent1/core/services/retention_purge_service.py` with explicit `dry_run`/`execute` modes, deterministic report rendering, and environment-scoped purge safety guards.
+- Retention purge persistence operations are implemented under `apps/backend/src/agent1/db/repositories/retention_repository.py`, including `logs` (`event_journal`), `traces` (`github_events`), and `test_artifacts` (`audit_runs`) cutoff deletes.
+- Retention purge operations runner is implemented under `tests/operations/retention_purge_run.py` with deterministic reference-timestamp support for operator reproducibility.
+- Stop-the-line threshold evaluation and automatic mode-downgrade decisions are implemented under `apps/backend/src/agent1/core/services/stop_the_line_service.py` and wired into application runtime state.
+- Stop-the-line threshold breach alert emission and operator acknowledgement persistence are implemented in `apps/backend/src/agent1/core/services/alert_signal_service.py`, including `POST /dashboard/alerts/stop-the-line/acknowledge` operator flow.
+- Release-promotion precondition evaluation is implemented under `apps/backend/src/agent1/core/services/release_promotion_gate_service.py` and wired into application runtime state.
+- Dashboard API baseline is defined under:
+  - `apps/backend/src/agent1/api/dashboard.py`
+  - `apps/backend/src/agent1/api/dashboard_contracts.py`
+  - `apps/backend/src/agent1/core/services/dashboard_service.py`
+- Dashboard API supports:
+  - `GET /dashboard/overview` with shared section pagination (`limit`, `offset`) and optional filters (`entity_key`, `job_id`, `trace_id`, `status`),
+  - anomaly feed in `GET /dashboard/overview` under `anomalies` / `anomalies_page` sourced from emitted alert signals,
+  - `GET /dashboard/jobs/{job_id}/timeline` for per-job transition/event drill-down views.
+- Persistence baseline is defined under:
+  - `apps/backend/src/agent1/db/models.py`
+  - `apps/backend/src/agent1/db/repositories/`
+  - `apps/backend/src/agent1/core/services/persistence_service.py`
+  - `apps/backend/alembic/versions/20260302_000001_initial_persistence.py`
+  - `apps/backend/alembic/versions/20260303_000002_ingestion_cursors.py`
+  - `apps/backend/alembic/versions/20260303_000003_runtime_scope_guards.py`
+  - `apps/backend/alembic/versions/20260304_000004_outbox_entries.py`
+  - `apps/backend/alembic/versions/20260304_000005_ingress_ordering_and_lease_fencing.py`
+  - `apps/backend/alembic/versions/20260304_000006_watcher_states.py`
+  - `apps/backend/alembic/versions/20260304_000007_entities.py`
+  - `apps/backend/alembic/versions/20260304_000008_action_attempts.py`
+  - `apps/backend/alembic/versions/20260304_000009_comment_targets.py`
+  - `apps/backend/alembic/versions/20260305_000010_outbox_idempotency_schema.py`
+  - `apps/backend/alembic/versions/20260305_000011_audit_runs.py`
+  - `apps/backend/alembic/versions/20260306_000012_event_journal_chain.py`
+- Entity durability baseline now includes `entities` as a first-class persisted table keyed by (`environment`, `entity_key`) with repository/type metadata.
+- Action attempt durability baseline now includes `action_attempts` linked to both `jobs` and `outbox_entries` for append-only side-effect attempt history.
+- Comment-target durability baseline now includes `comment_targets` for deterministic routing target persistence linked to both `jobs` and `outbox_entries`, plus replay/idempotency lookup APIs by outbox and idempotency scope.
+- Audit-run durability baseline now includes `audit_runs` snapshot scaffolding with environment scope, run status, timestamps, and JSON snapshot payload.
+- Audit-run repository/service baseline now includes typed append and list APIs with environment/status/type filters.
+- Orchestration baseline is defined under:
+  - `apps/backend/src/agent1/core/workflow.py`
+  - `apps/backend/src/agent1/core/watcher.py`
+  - `apps/backend/src/agent1/core/orchestrator.py`
+- GitHub ingress baseline is defined under:
+  - `apps/backend/src/agent1/core/ingress_contracts.py`
+  - `apps/backend/src/agent1/adapters/github/client.py`
+  - `apps/backend/src/agent1/adapters/github/notification_mapper.py`
+  - `apps/backend/src/agent1/adapters/github/timeline_mapper.py`
+  - `apps/backend/src/agent1/adapters/github/check_run_mapper.py`
+  - `apps/backend/src/agent1/adapters/github/scanner.py`
+  - `apps/backend/src/agent1/core/services/comment_router.py`
+  - `apps/backend/src/agent1/core/services/ingress_cursor_store.py`
+  - `apps/backend/src/agent1/core/services/mention_action_executor.py`
+  - `apps/backend/src/agent1/core/ingress_normalizer.py`
+  - `apps/backend/src/agent1/core/ingress_coordinator.py`
+  - `apps/backend/src/agent1/core/services/ingress_worker.py`
+  - `apps/backend/src/agent1/main.py` (runtime bootstrap state wiring)
+- Notification scanning supports:
+  - pagination (`page` + `per_page`),
+  - incremental `since` cursor updates,
+  - durable cursor checkpointing through `ingestion_cursors`,
+  - PR timeline and check-run enrichment for higher-confidence review/CI events.
+- Ingress ordering reliability supports:
+  - durable ingress event persistence in `github_events` with `source_event_id`, `source_timestamp_or_seq`, and `received_at`,
+  - deterministic per-entity high-water ordering in `ingress_entity_cursors`,
+  - stale/out-of-order ingress event audit persistence with execution skip gates to prevent backward transitions.
+- Entity integration in ingress/orchestration supports:
+  - deterministic `ensure_entity` upsert/touch path for every normalized ingress event,
+  - persisted entity metadata (`repository`, `entity_number`, `entity_type`, `is_sandbox`) in `entities`,
+  - event-time freshness updates via `last_event_at`.
+- Ingress worker runtime supports:
+  - background polling loop started on FastAPI startup and stopped on shutdown,
+  - fail-fast startup ownership fencing for active runtime scopes via persisted `runtime_scope_guards`,
+  - poll interval sourced from `controls/runtime/default.json`,
+  - watcher lifecycle persistence in `watcher_states` with durable fields `next_check_at`, `last_heartbeat_at`, `idle_cycles`, `watch_deadline_at`, and `checkpoint_cursor`,
+  - stale-watcher sweeper reclaim with checkpoint restoration and operator-required escalation for irrecoverably stuck watchers,
+  - runtime mode propagation (`active`, `shadow`, `dry_run`) from controls into created jobs,
+  - active-scope repository filtering, dev sandbox-scope inclusion filtering, and prod active-mode sandbox exclusion filtering during normalization,
+  - cycle heartbeat and failure logging per processing cycle,
+  - runtime alert-signal checks for outbox backlog growth and elevated failed transition rates.
+- First deterministic side-effect path supports:
+  - issue/PR mention detection in normalized ingress events,
+  - sufficient-context issue assignment direct execution with deterministic state advancement,
+  - self-trigger prevention by ignoring comment-driven ingress events from the configured agent actor,
+  - bot-origin review-context filtering by ignoring comment-driven ingress events from configured actor suffixes,
+  - insufficient-context issue assignment clarification comment posting,
+  - issue update (`reason=comment`) ingestion signal for blocked-job context re-evaluation,
+  - reviewer-request side effects for `pr_reviewer` jobs with top-level PR review updates,
+  - reviewer follow-up loop on `pr_updated` events flagged with `requires_follow_up`,
+  - PR author feedback follow-up side effects for review comments on agent-authored PR jobs,
+  - PR author CI-triage side effects for failed checks on agent-authored PR jobs,
+  - Codex remediation task execution for PR author follow-up paths before outbound GitHub updates,
+  - zero-write handling in non-active runtime modes, with deterministic no-write state transitions,
+  - top-level comment response posting through GitHub API adapter,
+  - PR review-thread reply routing through comment target metadata (`thread_id`, `review_comment_id`, `path`, `line`, `side`),
+  - persisted routing target records in `comment_targets` for routed side effects with deterministic outbox linkage,
+  - strict block behavior when review-thread metadata is missing and top-level fallback is disabled,
+  - deterministic clarification transition `awaiting_context -> blocked` after clarification request delivery,
+  - deterministic resume transition `blocked -> ready_to_execute -> awaiting_human_feedback` on sufficient context updates,
+  - deterministic reviewer follow-up transition `awaiting_human_feedback -> ready_to_execute -> awaiting_human_feedback`,
+  - deterministic reviewer terminal transition `awaiting_human_feedback -> completed` on PR updates carrying `human_terminal_decision` (`merged` or `closed`),
+  - deterministic state advancement `ready_to_execute -> executing -> awaiting_human_feedback`,
+  - lease-epoch validation before mutating GitHub side effects to reject stale-owner writes,
+  - blocked transition on comment post failure.
+- Runtime safety policy enforcement is defined under:
+  - `apps/backend/src/agent1/adapters/github/client.py`
+  - `apps/backend/src/agent1/core/control_schemas.py`
+  - `controls/policies/permission-matrix.json`
+  - `controls/policies/protected-approval.json`
+  - `controls/policies/default.json`
+  - `tests/operations/permission_matrix_validation.py`
+  - `tests/operations/protected_mutation_approval_validation.py`
+  - `tests/operations/event_journal_chain_validation.py`
+  - `tests/operations/retention_policy_validation.py`
+  - `apps/backend/src/agent1/config/settings.py`
+- Runtime safety guarantees:
+  - machine-readable permission-matrix coverage is loaded from `controls/policies/permission-matrix.json` and merged into policy controls during startup validation,
+  - machine-readable retention-policy coverage is loaded from `controls/runtime/default.json` and requires one entry for each (`artifact_type`, `environment`) pair across `logs`/`traces`/`test_artifacts` and `dev`/`prod`/`ci`,
+  - retention-policy drift validation enforces required scope coverage and non-shorter `prod` retention windows versus `dev`/`ci` for each artifact class,
+  - permission-matrix validation requires one entry for every (`component`, `environment`) pair across `api`/`worker`/`watcher`/`dashboard`/`ci` and `dev`/`prod`/`ci`,
+  - persistence least-privilege role declarations are required in policy controls for `migrator`, `runtime`, and `readonly_analytics`,
+  - protected policy/guardrail mutation approval snapshot is loaded from `controls/policies/protected-approval.json` and enforced at startup with fail-closed hash checks,
+  - protected mutation approval requires exact path coverage for `policies/default.json`, `policies/permission-matrix.json`, and `runtime/default.json`,
+  - protected mutation approval requires an append-only audit trail where the latest decision for the active approval id is `approved`,
+  - event-journal persistence includes tamper-evident chain fields (`event_seq`, `prev_event_hash`, `payload_hash`) with deterministic per-environment ordering,
+  - event-journal append operations compute chain values transactionally and reject missing-chain drift by rebuilding legacy rows before append,
+  - event-journal chain integrity is continuously verifiable through deterministic hash recomputation from persisted event payload fields,
+  - mutating GitHub calls perform credential-owner preflight binding against environment policy (`dev`/`prod`/`ci`),
+  - read-only scanner operations and mutating operations use separate credentials when split enforcement is enabled,
+  - allowed git mutation command allowlist is defined in policy controls for codex-runtime enforcement,
+  - allowed branch mutation namespace patterns are defined per environment in policy controls,
+  - codex runtime execution blocks explicit git mutation commands that are denied or outside allowlist policy,
+  - codex runtime execution blocks explicit branch create/push commands when branch targets are outside configured environment namespace patterns,
+  - operator response for codex git policy denials is documented in `docs/Developer/runbooks/git-mutation-policy-denials.md`,
+  - operator response for permission-matrix control failures is documented in `docs/Developer/runbooks/permission-matrix-validation.md`,
+  - operator response for protected mutation approval failures is documented in `docs/Developer/runbooks/protected-mutation-approvals.md`,
+  - operator response for event-journal chain integrity failures is documented in `docs/Developer/runbooks/event-journal-chain-validation.md`,
+  - GitHub capability checks are explicit and default-deny by policy,
+  - policy resolution fails closed when control loading is missing or invalid.
+- Outbox reliability baseline is defined under:
+  - `apps/backend/src/agent1/db/repositories/outbox_repository.py`
+  - `apps/backend/src/agent1/core/services/outbox_dispatcher.py`
+  - `apps/backend/src/agent1/core/services/persistence_service.py` (`transition_job_state_with_outbox`)
+  - `apps/backend/src/agent1/core/orchestrator.py` (`transition_job_with_outbox`)
+- Outbox reliability guarantees:
+  - transactional persistence of outbox intent rows in the same commit as state transitions,
+  - retry-safe dispatch state machine with statuses `pending -> sent -> confirmed` and failure states `failed` / `aborted`,
+  - canonical idempotency key builder baseline (`entity_key`, `action_type`, `target_identity`, `payload_hash`, `policy_version_hash`) for deterministic side-effect scope identity,
+  - outbox write-path schema enforcement for canonical idempotency scope when schema components are supplied,
+  - mutating dispatch lease-epoch validation against persisted job lease ownership,
+  - idempotency-scope reconciliation guard before retry dispatch with schema-component filtering when available,
+  - action-attempt lifecycle persistence in `action_attempts` with statuses `started` / `succeeded` / `failed` / `aborted` and deterministic error metadata,
+  - duplicate side-effect anomaly alert signal emission on reconciliation abort.
+- Operational alert-signal runtime baseline is defined under:
+  - `apps/backend/src/agent1/core/services/alert_signal_service.py`
+  - `apps/backend/src/agent1/core/services/outbox_dispatcher.py`
+  - `apps/backend/src/agent1/core/services/mention_action_executor.py`
+  - `apps/backend/src/agent1/core/orchestrator.py`
+  - `apps/backend/src/agent1/core/services/ingress_worker.py`
+- Operational alert-signal guarantees:
+  - alert signals are emitted for lease violations, duplicate side-effect anomalies, comment-routing failures, outbox backlog growth, elevated failed transition rates, hash-chain gap anomalies, and idempotency-scope violations,
+  - stop-the-line threshold breaches emit dedicated alert signals with deterministic `alert_id`, rollback decision payload, and runbook linkage,
+  - operator acknowledgement for stop-the-line alerts is persisted as explicit event-journal records linked to `alert_id`,
+  - alert payloads include deterministic runbook linkage and always carry `trace_id` and `job_id`.
+- Codex execution baseline is defined under:
+  - `apps/backend/src/agent1/adapters/codex/contracts.py`
+  - `apps/backend/src/agent1/adapters/codex/client.py`
+  - `apps/backend/src/agent1/core/services/codex_executor.py`
+  - `apps/backend/src/agent1/main.py` (`application.state.codex_executor`)
+- Codex adapter guarantees:
+  - typed task input and stream event contracts,
+  - subprocess streaming for stdout/stderr event emission,
+  - explicit timeout and cancellation outcomes mapped to `ExecutionResult`.
+- Sentry runtime baseline is defined under:
+  - `apps/backend/src/agent1/core/services/sentry_runtime.py`
+  - `apps/backend/src/agent1/config/settings.py`
+  - `apps/backend/src/agent1/main.py` (`application.state.sentry_enabled`)
+- Sentry configuration environment keys:
+  - `SENTRY_PYTHON_DSN`
+  - `SENTRY_ENVIRONMENT`
+  - `SENTRY_RELEASE`
+  - `SENTRY_TRACES_SAMPLE_RATE`
+- Structured observability baseline is defined under:
+  - `apps/backend/src/agent1/core/services/trace_context.py`
+  - `apps/backend/src/agent1/core/services/structured_event_logger.py`
+  - `apps/backend/src/agent1/core/services/persistence_service.py`
+  - `apps/backend/src/agent1/main.py` (request trace middleware + response header)
+- Structured observability guarantees:
+  - request trace context is stored in runtime context and returned as `x-trace-id`,
+  - persisted `AgentEvent` records are emitted as structured JSON logs,
+  - secret-like keys are redacted from emitted event details.
+- OpenTelemetry runtime baseline is defined under:
+  - `apps/backend/src/agent1/core/services/telemetry_runtime.py`
+  - `apps/backend/src/agent1/core/services/codex_executor.py` (manual span around task execution)
+  - `apps/backend/src/agent1/core/ingress_coordinator.py` (manual span around processing cycle)
+  - `apps/backend/src/agent1/main.py` (`application.state.otel_enabled`)
+- OpenTelemetry configuration environment keys:
+  - `OTEL_SERVICE_NAME`
+  - `OTEL_TRACES_SAMPLER`
+  - `OTEL_PROPAGATORS`
+- OpenTelemetry behavior:
+  - FastAPI runtime is instrumented with OpenTelemetry middleware,
+  - spans flow through Sentry via `SentrySpanProcessor` when `SENTRY_PYTHON_DSN` is configured.
+- CI gate workflows are defined under:
+  - `.github/workflows/pr-gates.yml` (PR quality and environment safety checks)
+  - `.github/workflows/nightly-full-suite.yml` (nightly backend and frontend full-suite execution)
+  - `.github/workflows/release-promotion-gate.yml` (main-branch release-promotion precondition gate)
+- Permission-matrix validation is enforced in PR and nightly backend quality gates via `tests/operations/permission_matrix_validation.py`.
+- Protected mutation approval validation is enforced in PR and nightly backend quality gates via `tests/operations/protected_mutation_approval_validation.py`.
+- Event-journal chain validation is enforced in PR and nightly backend quality gates via `tests/operations/event_journal_chain_validation.py`.
+- Retention-policy validation is enforced in PR and nightly backend quality gates via `tests/operations/retention_policy_validation.py`.
+- Retention purge integration and boundary behavior coverage is defined in:
+  - `apps/backend/tests/test_retention_purge_service.py`
+  - `apps/backend/tests/test_retention_purge_run_script.py`
+- Workflow supply-chain hardening validation is enforced in PR and nightly backend quality gates via `tests/operations/workflow_supply_chain_validation.py`.
+- Dependency vulnerability gates are enforced through `tests/operations/dependency_vulnerability_gate.py` for:
+  - python dependencies in backend quality jobs,
+  - node dependencies in frontend quality jobs.
+- Retention-policy source of truth is `controls/runtime/default.json` (`retention_policy`) with drift enforcement in `tests/operations/retention_policy_validation.py`.
+- Retention purge incident procedure is documented in `docs/Developer/runbooks/retention-and-purge-governance.md`.
+- CI token-permission policy source is `docs/Developer/ci-token-permissions-policy.json` and is treated as drift-control source of truth.
+- Dependency vulnerability threshold/exception policy source is `docs/Developer/dependency-vulnerability-policy.json` with operator guidance in `docs/Developer/dependency-vulnerability-policy.md`.
+- Third-party workflow actions are pinned to immutable SHAs across CI workflows.
+- Playwright E2E scaffold is defined under:
+  - `apps/frontend/playwright.config.ts`
+  - `apps/frontend/tests/e2e/fixtures.ts`
+  - `apps/frontend/tests/e2e/overview-shell.spec.ts`
+- Playwright operator-flow coverage for overview filters and timeline drill-down is defined under:
+  - `apps/frontend/tests/e2e/operator-overview-and-timeline.spec.ts`
+- Playwright operator-flow coverage for trace pivot and event-detail inspection is defined under:
+  - `apps/frontend/tests/e2e/operator-trace-pivot-and-event-detail.spec.ts`
+- Playwright local/CI run instructions and selector contract are documented under:
+  - `apps/frontend/tests/e2e/README.md`
+- PR and nightly workflows include Playwright browser setup (`playwright install --with-deps chromium`) and smoke execution.
+- `pr-gates` uploads frontend Playwright artifacts (`playwright-report`, `test-results`) and backend PR smoke junit artifact.
+- `nightly-full-suite` uploads retained Playwright artifacts (`retention-days: 14`) and emits failure summary output in workflow step summary.
+- `nightly-full-suite` now enforces per-job timeout guardrails in addition to schedule and concurrency guards.
+- Scenario and live smoke runners are defined under:
+  - `tests/scenarios/catalog.json` (deterministic scenario ID to pytest node binding)
+  - `tests/scenarios/pr-smoke-catalog.json` (minimal PR smoke scenario/spec selection)
+  - `tests/scenarios/pr-smoke-env-contract.md` (PR smoke environment contract)
+  - `tests/scenarios/pr_smoke_run.py` (backend PR smoke runner for CI + junit output)
+  - `tests/scenarios/run.py` (scenario harness executor)
+  - `tests/live/test_github_sandbox_smoke.py` (GitHub sandbox smoke assertions)
+  - `tests/live/run.py` (live smoke executor)
+- Operational-readiness artifacts and gate are defined under:
+  - `docs/Developer/operational-readiness.md` (release-readiness evidence record)
+  - `docs/Developer/service-level-policy.md` (SLO and error-budget policy source)
+  - `docs/Developer/alert-routing-matrix.json` (machine-readable severity and runbook routing)
+  - `docs/Developer/incident-response-policy.md` (incident lifecycle and corrective-action policy)
+  - `docs/Developer/release-control.json` (release freeze and exception status control)
+  - `docs/Developer/rollback-rehearsal-log.md` (rollback rehearsal evidence log)
+  - `tests/operations/run.py` (required runbook and evidence validator)
+  - `tests/operations/release_promotion_gate.py` (release-promotion precondition evaluator)
+  - `tests/operations/retention_policy_validation.py` (retention drift-control validator)
+  - `tests/operations/retention_purge_run.py` (retention dry-run/execute operator runner)
+  - `tests/operations/README.md` (operations gate index)
+  - `docs/Developer/runbooks/release-promotion-gate.md` (operator release-promotion gate procedure)
+  - `docs/Developer/runbooks/pr-smoke-failures-and-reruns.md` (PR smoke fail policy and rerun procedure)
+  - `docs/Developer/runbooks/retention-and-purge-governance.md` (retention drift/purge incident response)
+- Deployment artifacts and environment contract are defined under:
+  - `apps/backend/Dockerfile` (backend runtime container image)
+  - `apps/backend/docker/entrypoint.sh` (backend startup and migration command)
+  - `apps/frontend/Dockerfile` (frontend static runtime container image)
+  - `.dockerignore` (container build context policy)
+  - `render.yaml` (Render service blueprint and release automation wiring)
+  - `docs/Developer/deployment-environment-contract.md` (required deployment environment variables)
+- Release-promotion operations execution now appends one persisted `audit_runs` snapshot per gate run with decision evidence payload.
+- Frontend operations dashboard baseline is defined under:
+  - `apps/frontend/src/main.ts`
+  - `apps/frontend/src/styles.css`
+  - `apps/frontend/src/main.test.ts`
+- Frontend dashboard currently supports:
+  - filter controls for `entity_key`, `job_id`, `trace_id`, and `status`,
+  - paginated overview navigation,
+  - job timeline drill-down with dedicated timeline paging,
+  - action-attempt timeline query rendering (`started` / `succeeded` / `failed` / `aborted`) for each job timeline view,
+  - timeline event inspection with rendered `details` payload and correlated transition view by event `details.reason`,
+  - trace pivot action from selected timeline event back into overview filters.

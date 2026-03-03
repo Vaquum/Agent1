@@ -1,0 +1,675 @@
+from __future__ import annotations
+
+from datetime import datetime
+from datetime import timezone
+
+from agent1.core.contracts import AgentEvent
+from agent1.core.contracts import CommentTargetRecord
+from agent1.core.contracts import EntityRecord
+from agent1.core.contracts import EntityType
+from agent1.core.contracts import EnvironmentName
+from agent1.core.contracts import EventSource
+from agent1.core.contracts import EventStatus
+from agent1.core.contracts import EventType
+from agent1.core.contracts import JobRecord
+from agent1.core.contracts import JobState
+from agent1.core.contracts import OutboxActionType
+from agent1.core.contracts import OutboxRecord
+from agent1.core.contracts import OutboxWriteRequest
+from agent1.core.ingress_contracts import GitHubIngressEvent
+from agent1.core.ingress_contracts import IngressOrderingDecision
+from agent1.core.ingress_contracts import NormalizedIngressEvent
+from agent1.core.ingress_contracts import PersistedIngressEvent
+from agent1.core.services.alert_signal_service import AlertSignalService
+from agent1.core.services.persistence_service import PersistenceService
+from agent1.core.workflow import require_transition
+
+
+def _utc_now() -> datetime:
+
+    '''
+    Create current UTC timestamp for orchestrator event timestamps.
+
+    Returns:
+    datetime: Current UTC timestamp.
+    '''
+
+    return datetime.now(timezone.utc)
+
+
+class JobOrchestrator:
+    def __init__(self, persistence_service: PersistenceService | None = None) -> None:
+        self._persistence_service = persistence_service or PersistenceService()
+        self._alert_signal_service = AlertSignalService(self._persistence_service)
+
+    def ensure_entity(self, normalized_event: NormalizedIngressEvent) -> EntityRecord:
+
+        '''
+        Create entity persistence guarantee for normalized ingress processing.
+
+        Args:
+        normalized_event (NormalizedIngressEvent): Normalized ingress event payload.
+
+        Returns:
+        EntityRecord: Persisted entity contract for the normalized event scope.
+        '''
+
+        entity = self._persistence_service.get_entity(
+            environment=normalized_event.environment,
+            entity_key=normalized_event.entity_key,
+        )
+        if entity is None:
+            ingress_event_type = str(normalized_event.details.get('ingress_event_type', ''))
+            entity_type = EntityType.PR
+            if ingress_event_type.startswith('issue_'):
+                entity_type = EntityType.ISSUE
+
+            return self._persistence_service.create_entity(
+                EntityRecord(
+                    entity_key=normalized_event.entity_key,
+                    repository=normalized_event.repository,
+                    entity_number=normalized_event.entity_number,
+                    entity_type=entity_type,
+                    environment=normalized_event.environment,
+                    is_sandbox=bool(normalized_event.details.get('is_sandbox_scope', False)),
+                    is_closed=False,
+                    last_event_at=_utc_now(),
+                ),
+            )
+
+        self._persistence_service.touch_entity(
+            environment=normalized_event.environment,
+            entity_key=normalized_event.entity_key,
+            event_timestamp=_utc_now(),
+        )
+        refreshed_entity = self._persistence_service.get_entity(
+            environment=normalized_event.environment,
+            entity_key=normalized_event.entity_key,
+        )
+        if refreshed_entity is None:
+            message = f'Entity missing after touch: {normalized_event.entity_key}'
+            raise ValueError(message)
+
+        return refreshed_entity
+
+    def create_job(self, job_record: JobRecord, trace_id: str) -> JobRecord:
+
+        '''
+        Create new durable job and append corresponding creation event.
+
+        Args:
+        job_record (JobRecord): Job contract to persist.
+        trace_id (str): Correlation trace identifier.
+
+        Returns:
+        JobRecord: Created durable job contract.
+        '''
+
+        created_job = self._persistence_service.create_job(job_record)
+        self._persistence_service.append_event(
+            AgentEvent(
+                timestamp=_utc_now(),
+                environment=created_job.environment,
+                trace_id=trace_id,
+                job_id=created_job.job_id,
+                entity_key=created_job.entity_key,
+                source=EventSource.AGENT,
+                event_type=EventType.STATE_TRANSITION,
+                status=EventStatus.OK,
+                details={
+                    'action': 'create_job',
+                    'state': created_job.state.value,
+                },
+            )
+        )
+        return created_job
+
+    def get_job(self, job_id: str) -> JobRecord | None:
+
+        '''
+        Create durable job lookup result by job identifier.
+
+        Args:
+        job_id (str): Durable job identifier.
+
+        Returns:
+        JobRecord | None: Durable job record or None when missing.
+        '''
+
+        return self._persistence_service.get_job(job_id)
+
+    def append_comment_target(self, record: CommentTargetRecord) -> CommentTargetRecord:
+
+        '''
+        Create persisted comment-target row from resolved routing-target contract.
+
+        Args:
+        record (CommentTargetRecord): Typed comment-target contract to persist.
+
+        Returns:
+        CommentTargetRecord: Persisted typed comment-target contract.
+        '''
+
+        return self._persistence_service.append_comment_target(record)
+
+    def get_outbox_entry_by_outbox_id(self, outbox_id: str) -> OutboxRecord | None:
+
+        '''
+        Create outbox lookup result by durable outbox identifier.
+
+        Args:
+        outbox_id (str): Durable outbox identifier.
+
+        Returns:
+        OutboxRecord | None: Typed outbox contract or None when missing.
+        '''
+
+        return self._persistence_service.get_outbox_entry_by_outbox_id(outbox_id)
+
+    def get_outbox_entry_by_idempotency_scope(
+        self,
+        environment: EnvironmentName,
+        action_type: OutboxActionType,
+        target_identity: str,
+        idempotency_key: str,
+        idempotency_schema_version: str | None = None,
+        idempotency_payload_hash: str | None = None,
+        idempotency_policy_version_hash: str | None = None,
+    ) -> OutboxRecord | None:
+
+        '''
+        Create outbox lookup result by deterministic idempotency scope.
+
+        Args:
+        environment (EnvironmentName): Runtime environment value.
+        action_type (OutboxActionType): Outbox side-effect action type.
+        target_identity (str): Deterministic target identity.
+        idempotency_key (str): Deterministic idempotency key.
+        idempotency_schema_version (str | None): Optional idempotency schema version filter.
+        idempotency_payload_hash (str | None): Optional payload hash filter.
+        idempotency_policy_version_hash (str | None): Optional policy-version hash filter.
+
+        Returns:
+        OutboxRecord | None: Typed outbox contract or None when missing.
+        '''
+
+        return self._persistence_service.get_outbox_entry_by_idempotency_scope(
+            environment=environment,
+            action_type=action_type,
+            target_identity=target_identity,
+            idempotency_key=idempotency_key,
+            idempotency_schema_version=idempotency_schema_version,
+            idempotency_payload_hash=idempotency_payload_hash,
+            idempotency_policy_version_hash=idempotency_policy_version_hash,
+        )
+
+    def get_comment_target_by_outbox_id(
+        self,
+        environment: EnvironmentName,
+        outbox_id: str,
+    ) -> CommentTargetRecord | None:
+
+        '''
+        Create comment-target lookup result by environment and outbox identifier.
+
+        Args:
+        environment (EnvironmentName): Runtime environment value.
+        outbox_id (str): Durable outbox identifier.
+
+        Returns:
+        CommentTargetRecord | None: Typed comment-target contract or None when missing.
+        '''
+
+        return self._persistence_service.get_comment_target_by_outbox_id(
+            environment=environment,
+            outbox_id=outbox_id,
+        )
+
+    def get_comment_target_by_idempotency_scope(
+        self,
+        environment: EnvironmentName,
+        action_type: OutboxActionType,
+        target_identity: str,
+        idempotency_key: str,
+    ) -> CommentTargetRecord | None:
+
+        '''
+        Create comment-target lookup result by deterministic idempotency scope.
+
+        Args:
+        environment (EnvironmentName): Runtime environment value.
+        action_type (OutboxActionType): Outbox side-effect action type.
+        target_identity (str): Deterministic target identity.
+        idempotency_key (str): Deterministic idempotency key.
+
+        Returns:
+        CommentTargetRecord | None: Typed comment-target contract or None when missing.
+        '''
+
+        return self._persistence_service.get_comment_target_by_idempotency_scope(
+            environment=environment,
+            action_type=action_type,
+            target_identity=target_identity,
+            idempotency_key=idempotency_key,
+        )
+
+    def list_comment_targets_for_job(
+        self,
+        job_id: str,
+        limit: int,
+        offset: int = 0,
+    ) -> list[CommentTargetRecord]:
+
+        '''
+        Create comment-target list for one job identifier.
+
+        Args:
+        job_id (str): Durable job identifier.
+        limit (int): Maximum row count to return.
+        offset (int): Pagination offset.
+
+        Returns:
+        list[CommentTargetRecord]: Ordered typed comment-target rows.
+        '''
+
+        return self._persistence_service.list_comment_targets_for_job(
+            job_id=job_id,
+            limit=limit,
+            offset=offset,
+        )
+
+    def count_comment_targets_for_job(self, job_id: str) -> int:
+
+        '''
+        Create comment-target count for one job identifier.
+
+        Args:
+        job_id (str): Durable job identifier.
+
+        Returns:
+        int: Comment-target row count for the provided job.
+        '''
+
+        return self._persistence_service.count_comment_targets_for_job(job_id=job_id)
+
+    def append_outbox_entry(self, request: OutboxWriteRequest) -> OutboxRecord:
+
+        '''
+        Create persisted outbox intent row from typed outbox write request.
+
+        Args:
+        request (OutboxWriteRequest): Typed outbox intent write request.
+
+        Returns:
+        OutboxRecord: Persisted typed outbox row.
+        '''
+
+        return self._persistence_service.append_outbox_entry(request)
+
+    def mark_outbox_entry_sent(self, outbox_id: str, expected_lease_epoch: int) -> bool:
+
+        '''
+        Compute sent-status update outcome for one outbox entry attempt.
+
+        Args:
+        outbox_id (str): Durable outbox identifier.
+        expected_lease_epoch (int): Expected lease epoch fencing value.
+
+        Returns:
+        bool: True when update succeeded, otherwise False.
+        '''
+
+        return self._persistence_service.mark_outbox_entry_sent(
+            outbox_id=outbox_id,
+            expected_lease_epoch=expected_lease_epoch,
+        )
+
+    def mark_outbox_entry_confirmed(self, outbox_id: str, expected_lease_epoch: int) -> bool:
+
+        '''
+        Compute confirmed-status update outcome for one outbox entry.
+
+        Args:
+        outbox_id (str): Durable outbox identifier.
+        expected_lease_epoch (int): Expected lease epoch fencing value.
+
+        Returns:
+        bool: True when update succeeded, otherwise False.
+        '''
+
+        return self._persistence_service.mark_outbox_entry_confirmed(
+            outbox_id=outbox_id,
+            expected_lease_epoch=expected_lease_epoch,
+        )
+
+    def mark_outbox_entry_aborted(
+        self,
+        outbox_id: str,
+        expected_lease_epoch: int,
+        abort_reason: str,
+    ) -> bool:
+
+        '''
+        Compute aborted-status update outcome for unrecoverable outbox entries.
+
+        Args:
+        outbox_id (str): Durable outbox identifier.
+        expected_lease_epoch (int): Expected lease epoch fencing value.
+        abort_reason (str): Deterministic abort summary.
+
+        Returns:
+        bool: True when update succeeded, otherwise False.
+        '''
+
+        return self._persistence_service.mark_outbox_entry_aborted(
+            outbox_id=outbox_id,
+            expected_lease_epoch=expected_lease_epoch,
+            abort_reason=abort_reason,
+        )
+
+    def claim_job(self, job_id: str, trace_id: str) -> bool:
+
+        '''
+        Create lease claim attempt and append lease-claim event result.
+
+        Args:
+        job_id (str): Durable job identifier.
+        trace_id (str): Correlation trace identifier.
+
+        Returns:
+        bool: True when claim succeeded, otherwise False.
+        '''
+
+        existing_job = self._persistence_service.get_job(job_id)
+        if existing_job is None:
+            message = f'Job not found for claim: {job_id}'
+            raise ValueError(message)
+
+        claimed = self._persistence_service.claim_job_lease(job_id, existing_job.lease_epoch)
+        self._persistence_service.append_event(
+            AgentEvent(
+                timestamp=_utc_now(),
+                environment=existing_job.environment,
+                trace_id=trace_id,
+                job_id=existing_job.job_id,
+                entity_key=existing_job.entity_key,
+                source=EventSource.WATCHER,
+                event_type=EventType.STATE_TRANSITION,
+                status=EventStatus.OK if claimed else EventStatus.RETRY,
+                details={
+                    'action': 'claim_job_lease',
+                    'expected_lease_epoch': existing_job.lease_epoch,
+                    'claimed': claimed,
+                },
+            )
+        )
+        return claimed
+
+    def validate_mutating_lease(self, job_id: str, expected_lease_epoch: int, trace_id: str) -> bool:
+
+        '''
+        Create mutating lease validation outcome and append lease-fencing event result.
+
+        Args:
+        job_id (str): Durable job identifier.
+        expected_lease_epoch (int): Expected lease epoch for mutating side effects.
+        trace_id (str): Correlation trace identifier.
+
+        Returns:
+        bool: True when lease validation succeeded, otherwise False.
+        '''
+
+        existing_job = self._persistence_service.get_job(job_id)
+        if existing_job is None:
+            message = f'Job not found for lease validation: {job_id}'
+            raise ValueError(message)
+
+        valid = self._persistence_service.validate_job_lease_epoch(job_id, expected_lease_epoch)
+        self._persistence_service.append_event(
+            AgentEvent(
+                timestamp=_utc_now(),
+                environment=existing_job.environment,
+                trace_id=trace_id,
+                job_id=existing_job.job_id,
+                entity_key=existing_job.entity_key,
+                source=EventSource.POLICY,
+                event_type=EventType.API_CALL,
+                status=EventStatus.OK if valid else EventStatus.BLOCKED,
+                details={
+                    'action': 'validate_mutating_lease',
+                    'expected_lease_epoch': expected_lease_epoch,
+                    'current_lease_epoch': existing_job.lease_epoch,
+                    'valid': valid,
+                },
+            )
+        )
+        if valid is False:
+            self._alert_signal_service.emit_lease_violation(
+                environment=existing_job.environment,
+                trace_id=trace_id,
+                job_id=existing_job.job_id,
+                entity_key=existing_job.entity_key,
+                expected_lease_epoch=expected_lease_epoch,
+                current_lease_epoch=existing_job.lease_epoch,
+            )
+        return valid
+
+    def emit_comment_routing_failure_alert(
+        self,
+        environment: EnvironmentName,
+        trace_id: str,
+        job_id: str,
+        entity_key: str,
+        error_message: str,
+    ) -> None:
+
+        '''
+        Create comment-routing failure alert signal for strict review-thread routing incidents.
+
+        Args:
+        environment (EnvironmentName): Runtime environment value.
+        trace_id (str): Correlation trace identifier.
+        job_id (str): Durable job identifier.
+        entity_key (str): Entity key associated with the alert.
+        error_message (str): Deterministic routing failure summary.
+        '''
+
+        self._alert_signal_service.emit_comment_routing_failure(
+            environment=environment,
+            trace_id=trace_id,
+            job_id=job_id,
+            entity_key=entity_key,
+            error_message=error_message,
+        )
+
+    def persist_ingress_event(
+        self,
+        ingress_event: GitHubIngressEvent,
+        environment: EnvironmentName,
+    ) -> PersistedIngressEvent:
+
+        '''
+        Create persisted ingress event ordering record and append ingest audit event.
+
+        Args:
+        ingress_event (GitHubIngressEvent): Raw ingress event payload.
+        environment (EnvironmentName): Runtime environment value.
+
+        Returns:
+        PersistedIngressEvent: Persisted ingress ordering decision payload.
+        '''
+
+        persisted_event = self._persistence_service.persist_ingress_event(
+            ingress_event=ingress_event,
+            environment=environment,
+        )
+        status = EventStatus.OK
+        if persisted_event.ordering_decision == IngressOrderingDecision.STALE:
+            status = EventStatus.RETRY
+
+        self._persistence_service.append_event(
+            AgentEvent(
+                timestamp=persisted_event.received_at,
+                environment=environment,
+                trace_id=f"trc_{ingress_event.event_id}",
+                job_id=f"ingress:{ingress_event.event_id}",
+                entity_key=persisted_event.entity_key,
+                source=EventSource.GITHUB,
+                event_type=EventType.API_CALL,
+                status=status,
+                details={
+                    'action': 'persist_ingress_event',
+                    'source_event_id': persisted_event.source_event_id,
+                    'source_timestamp_or_seq': persisted_event.source_timestamp_or_seq,
+                    'received_at': persisted_event.received_at.isoformat(),
+                    'ordering_decision': persisted_event.ordering_decision.value,
+                    'stale_reason': persisted_event.stale_reason,
+                },
+            )
+        )
+        return persisted_event
+
+    def transition_job(self, job_id: str, to_state: JobState, reason: str, trace_id: str) -> JobRecord:
+
+        '''
+        Create deterministic job transition after workflow-policy validation.
+
+        Args:
+        job_id (str): Durable job identifier.
+        to_state (JobState): Target lifecycle state.
+        reason (str): Deterministic transition reason.
+        trace_id (str): Correlation trace identifier.
+
+        Returns:
+        JobRecord: Updated durable job contract.
+        '''
+
+        current_job = self._persistence_service.get_job(job_id)
+        if current_job is None:
+            message = f'Job not found for transition: {job_id}'
+            raise ValueError(message)
+
+        try:
+            require_transition(current_job.state, to_state)
+        except ValueError:
+            self._persistence_service.append_event(
+                AgentEvent(
+                    timestamp=_utc_now(),
+                    environment=current_job.environment,
+                    trace_id=trace_id,
+                    job_id=current_job.job_id,
+                    entity_key=current_job.entity_key,
+                    source=EventSource.POLICY,
+                    event_type=EventType.STATE_TRANSITION,
+                    status=EventStatus.BLOCKED,
+                    details={
+                        'action': 'transition_job',
+                        'from_state': current_job.state.value,
+                        'to_state': to_state.value,
+                        'reason': reason,
+                    },
+                )
+            )
+            raise
+
+        updated_job = self._persistence_service.transition_job_state(job_id, to_state, reason)
+        self._persistence_service.append_event(
+            AgentEvent(
+                timestamp=_utc_now(),
+                environment=updated_job.environment,
+                trace_id=trace_id,
+                job_id=updated_job.job_id,
+                entity_key=updated_job.entity_key,
+                source=EventSource.AGENT,
+                event_type=EventType.STATE_TRANSITION,
+                status=EventStatus.OK,
+                details={
+                    'action': 'transition_job',
+                    'from_state': current_job.state.value,
+                    'to_state': updated_job.state.value,
+                    'reason': reason,
+                },
+            )
+        )
+        return updated_job
+
+    def transition_job_with_outbox(
+        self,
+        job_id: str,
+        to_state: JobState,
+        reason: str,
+        trace_id: str,
+        outbox_requests: list[OutboxWriteRequest],
+    ) -> tuple[JobRecord, list[OutboxRecord]]:
+
+        '''
+        Create deterministic job transition with atomic outbox intent persistence.
+
+        Args:
+        job_id (str): Durable job identifier.
+        to_state (JobState): Target lifecycle state.
+        reason (str): Deterministic transition reason.
+        trace_id (str): Correlation trace identifier.
+        outbox_requests (list[OutboxWriteRequest]): Outbox intents to persist atomically.
+
+        Returns:
+        tuple[JobRecord, list[OutboxRecord]]: Updated job and persisted outbox intents.
+        '''
+
+        current_job = self._persistence_service.get_job(job_id)
+        if current_job is None:
+            message = f'Job not found for transition: {job_id}'
+            raise ValueError(message)
+
+        try:
+            require_transition(current_job.state, to_state)
+        except ValueError:
+            self._persistence_service.append_event(
+                AgentEvent(
+                    timestamp=_utc_now(),
+                    environment=current_job.environment,
+                    trace_id=trace_id,
+                    job_id=current_job.job_id,
+                    entity_key=current_job.entity_key,
+                    source=EventSource.POLICY,
+                    event_type=EventType.STATE_TRANSITION,
+                    status=EventStatus.BLOCKED,
+                    details={
+                        'action': 'transition_job_with_outbox',
+                        'from_state': current_job.state.value,
+                        'to_state': to_state.value,
+                        'reason': reason,
+                    },
+                )
+            )
+            raise
+
+        updated_job, outbox_records = self._persistence_service.transition_job_state_with_outbox(
+            job_id,
+            to_state,
+            reason,
+            outbox_requests,
+        )
+        self._persistence_service.append_event(
+            AgentEvent(
+                timestamp=_utc_now(),
+                environment=updated_job.environment,
+                trace_id=trace_id,
+                job_id=updated_job.job_id,
+                entity_key=updated_job.entity_key,
+                source=EventSource.AGENT,
+                event_type=EventType.STATE_TRANSITION,
+                status=EventStatus.OK,
+                details={
+                    'action': 'transition_job_with_outbox',
+                    'from_state': current_job.state.value,
+                    'to_state': updated_job.state.value,
+                    'reason': reason,
+                    'outbox_count': len(outbox_records),
+                },
+            )
+        )
+        return updated_job, outbox_records
+
+
+__all__ = ['JobOrchestrator']

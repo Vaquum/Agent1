@@ -1,0 +1,76 @@
+{
+  "scenarios": [
+    {
+      "id": "SCN_ISSUE_MENTION_RESPONSE",
+      "node_id": "tests/test_ingress_coordinator.py::test_ingress_coordinator_executes_mention_side_effect"
+    },
+    {
+      "id": "SCN_ASSIGNMENT_CLARIFICATION_RESUME",
+      "node_id": "tests/test_ingress_coordinator.py::test_ingress_coordinator_resumes_blocked_assignment_on_issue_update"
+    },
+    {
+      "id": "SCN_ASSIGNMENT_DIRECT_EXECUTION",
+      "node_id": "tests/test_ingress_coordinator.py::test_ingress_coordinator_executes_direct_assignment_with_sufficient_context"
+    },
+    {
+      "id": "SCN_PR_MENTION_RESPONSE",
+      "node_id": "tests/test_ingress_coordinator.py::test_ingress_coordinator_executes_pr_mention_side_effect"
+    },
+    {
+      "id": "SCN_CHANGE_REQUEST_FOLLOW_UP",
+      "node_id": "tests/test_ingress_coordinator.py::test_ingress_coordinator_handles_pr_author_change_request_follow_up"
+    },
+    {
+      "id": "SCN_REVIEW_REQUEST_AND_FOLLOW_UP",
+      "node_id": "tests/test_ingress_coordinator.py::test_ingress_coordinator_reviewer_cycle_handles_follow_up_updates"
+    },
+    {
+      "id": "SCN_MULTI_ROUND_LIFECYCLE_HUMAN_TERMINAL_DECISION",
+      "node_id": "tests/test_ingress_coordinator.py::test_ingress_coordinator_handles_multi_round_lifecycle_until_human_terminal_decision"
+    },
+    {
+      "id": "SCN_AUTHOR_CI_FOLLOW_UP",
+      "node_id": "tests/test_ingress_coordinator.py::test_ingress_coordinator_handles_pr_author_ci_cycle"
+    },
+    {
+      "id": "SCN_SELF_TRIGGER_SUPPRESSION",
+      "node_id": "tests/test_ingress_coordinator.py::test_ingress_coordinator_ignores_self_triggered_mentions"
+    },
+    {
+      "id": "SCN_REVIEW_THREAD_REPLY_IN_PLACE",
+      "node_id": "tests/test_mention_action_executor.py::test_mention_action_executor_routes_review_thread_reply"
+    },
+    {
+      "id": "SCN_REVIEW_THREAD_STRICT_BLOCK_ON_MISSING_METADATA",
+      "node_id": "tests/test_mention_action_executor.py::test_mention_action_executor_blocks_on_missing_review_thread_metadata"
+    },
+    {
+      "id": "SCN_SHADOW_MODE_NO_WRITE_FEEDBACK",
+      "node_id": "tests/test_mention_action_executor.py::test_mention_action_executor_shadow_mode_skips_write_side_effects"
+    },
+    {
+      "id": "SCN_SHADOW_MODE_NO_WRITE_AUTHOR_CI",
+      "node_id": "tests/test_mention_action_executor.py::test_mention_action_executor_shadow_mode_keeps_author_ci_no_write"
+    },
+    {
+      "id": "SCN_BOT_REVIEW_CONTEXT_FILTER",
+      "node_id": "tests/test_ingress_normalizer.py::test_review_comment_from_bot_actor_is_ignored"
+    },
+    {
+      "id": "SCN_DEV_SANDBOX_SCOPE_FILTER",
+      "node_id": "tests/test_ingress_normalizer.py::test_normalizer_filters_dev_active_non_sandbox_scope"
+    },
+    {
+      "id": "SCN_DEV_SANDBOX_SCOPE_ACCEPT",
+      "node_id": "tests/test_ingress_normalizer.py::test_normalizer_accepts_dev_active_sandbox_scope"
+    },
+    {
+      "id": "SCN_DEV_PROD_ISOLATION_NO_DUPLICATE_SIDE_EFFECTS",
+      "node_id": "tests/test_ingress_coordinator.py::test_ingress_coordinator_scoped_dev_prod_harness_avoids_duplicate_side_effects"
+    },
+    {
+      "id": "SCN_ACTIVE_SCOPE_OWNERSHIP_CONFLICT",
+      "node_id": "tests/test_runtime_scope_guard.py::test_runtime_scope_guard_rejects_overlapping_active_scope"
+    }
+  ]
+}
