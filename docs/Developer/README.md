@@ -27,6 +27,8 @@ This directory contains developer-facing documentation for architecture, workflo
   - `apps/backend/alembic/versions/20260304_000004_outbox_entries.py`
   - `apps/backend/alembic/versions/20260304_000005_ingress_ordering_and_lease_fencing.py`
   - `apps/backend/alembic/versions/20260304_000006_watcher_states.py`
+  - `apps/backend/alembic/versions/20260304_000007_entities.py`
+- Entity durability baseline now includes `entities` as a first-class persisted table keyed by (`environment`, `entity_key`) with repository/type metadata.
 - Orchestration baseline is defined under:
   - `apps/backend/src/agent1/core/workflow.py`
   - `apps/backend/src/agent1/core/watcher.py`
@@ -54,6 +56,10 @@ This directory contains developer-facing documentation for architecture, workflo
   - durable ingress event persistence in `github_events` with `source_event_id`, `source_timestamp_or_seq`, and `received_at`,
   - deterministic per-entity high-water ordering in `ingress_entity_cursors`,
   - stale/out-of-order ingress event audit persistence with execution skip gates to prevent backward transitions.
+- Entity integration in ingress/orchestration supports:
+  - deterministic `ensure_entity` upsert/touch path for every normalized ingress event,
+  - persisted entity metadata (`repository`, `entity_number`, `entity_type`, `is_sandbox`) in `entities`,
+  - event-time freshness updates via `last_event_at`.
 - Ingress worker runtime supports:
   - background polling loop started on FastAPI startup and stopped on shutdown,
   - fail-fast startup ownership fencing for active runtime scopes via persisted `runtime_scope_guards`,

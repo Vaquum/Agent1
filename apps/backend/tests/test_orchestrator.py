@@ -9,6 +9,7 @@ from sqlalchemy.orm import sessionmaker
 import pytest
 
 from agent1.core.contracts import EnvironmentName
+from agent1.core.contracts import EntityType
 from agent1.core.contracts import JobKind
 from agent1.core.contracts import JobRecord
 from agent1.core.contracts import JobState
@@ -20,6 +21,7 @@ from agent1.core.ingress_contracts import GitHubIngressEvent
 from agent1.core.ingress_contracts import IngressEntityType
 from agent1.core.ingress_contracts import IngressEventType
 from agent1.core.ingress_contracts import IngressOrderingDecision
+from agent1.core.ingress_contracts import NormalizedIngressEvent
 from agent1.core.orchestrator import JobOrchestrator
 from agent1.core.services.persistence_service import PersistenceService
 
@@ -159,3 +161,38 @@ def test_orchestrator_persist_ingress_event_and_validate_mutating_lease(
     assert persisted_ingress_event.ordering_decision == IngressOrderingDecision.ACCEPTED
     assert valid_before_claim is True
     assert stale_after_claim is False
+
+
+def test_orchestrator_ensures_entity_create_and_touch(
+    session_factory: sessionmaker[Session],
+) -> None:
+    persistence_service = PersistenceService(session_factory=session_factory)
+    orchestrator = JobOrchestrator(persistence_service=persistence_service)
+    normalized_event = NormalizedIngressEvent(
+        event_id='evt_orch_entity_1',
+        trace_id='trc_orch_entity_1',
+        environment=EnvironmentName.DEV,
+        repository='Vaquum/Agent1',
+        entity_number=11,
+        entity_key='Vaquum/Agent1#11',
+        job_id='Vaquum_Agent1#11:issue',
+        job_kind=JobKind.ISSUE,
+        initial_state=JobState.READY_TO_EXECUTE,
+        should_claim_lease=True,
+        transition_to=JobState.READY_TO_EXECUTE,
+        transition_reason='issue_mention',
+        idempotency_key='idem_evt_orch_entity_1',
+        details={
+            'actor': 'mikkokotila',
+            'ingress_event_type': 'issue_mention',
+            'is_sandbox_scope': True,
+        },
+    )
+
+    first_entity = orchestrator.ensure_entity(normalized_event)
+    second_entity = orchestrator.ensure_entity(normalized_event)
+
+    assert first_entity.entity_key == 'Vaquum/Agent1#11'
+    assert first_entity.entity_type == EntityType.ISSUE
+    assert first_entity.is_sandbox is True
+    assert second_entity.last_event_at is not None

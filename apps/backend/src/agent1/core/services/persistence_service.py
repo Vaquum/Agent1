@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker
 
 from agent1.core.contracts import AgentEvent
+from agent1.core.contracts import EntityRecord
+from agent1.core.contracts import EntityType
 from agent1.core.contracts import EnvironmentName
 from agent1.core.contracts import JobRecord
 from agent1.core.contracts import JobState
@@ -18,8 +20,10 @@ from agent1.core.ingress_contracts import PersistedIngressEvent
 from agent1.core.watcher import WatcherState
 from agent1.core.services.structured_event_logger import log_agent_event
 from agent1.db.models import JobModel
+from agent1.db.models import EntityModel
 from agent1.db.models import OutboxEntryModel
 from agent1.db.models import WatcherStateModel
+from agent1.db.repositories.entity_repository import EntityRepository
 from agent1.db.repositories.event_repository import EventRepository
 from agent1.db.repositories.github_event_repository import GitHubEventRepository
 from agent1.db.repositories.job_repository import JobRepository
@@ -49,6 +53,30 @@ def _to_job_record(model: JobModel) -> JobRecord:
         lease_epoch=model.lease_epoch,
         environment=model.environment,
         mode=model.mode,
+    )
+
+
+def _to_entity_record(model: EntityModel) -> EntityRecord:
+
+    '''
+    Create typed entity contract from persisted entity model.
+
+    Args:
+    model (EntityModel): Persisted entity model row.
+
+    Returns:
+    EntityRecord: Typed entity contract.
+    '''
+
+    return EntityRecord(
+        entity_key=model.entity_key,
+        repository=model.repository,
+        entity_number=model.entity_number,
+        entity_type=model.entity_type,
+        environment=model.environment,
+        is_sandbox=model.is_sandbox,
+        is_closed=model.is_closed,
+        last_event_at=model.last_event_at,
     )
 
 
@@ -130,6 +158,136 @@ class PersistenceService:
             model = repository.create_job(record)
             session.commit()
             return _to_job_record(model)
+
+    def create_entity(self, record: EntityRecord) -> EntityRecord:
+
+        '''
+        Create persisted entity and return normalized typed entity contract.
+
+        Args:
+        record (EntityRecord): Typed entity contract to persist.
+
+        Returns:
+        EntityRecord: Typed persisted entity contract.
+        '''
+
+        with self._session_factory() as session:
+            repository = EntityRepository(session)
+            model = repository.create_entity(record)
+            session.commit()
+            return _to_entity_record(model)
+
+    def get_entity(self, environment: EnvironmentName, entity_key: str) -> EntityRecord | None:
+
+        '''
+        Create typed entity lookup result by environment-scoped entity key.
+
+        Args:
+        environment (EnvironmentName): Runtime environment value.
+        entity_key (str): Durable entity key.
+
+        Returns:
+        EntityRecord | None: Typed entity contract when found, otherwise None.
+        '''
+
+        with self._session_factory() as session:
+            repository = EntityRepository(session)
+            model = repository.get_entity_by_key(environment=environment, entity_key=entity_key)
+            if model is None:
+                return None
+
+            return _to_entity_record(model)
+
+    def list_entities(
+        self,
+        environment: EnvironmentName,
+        limit: int,
+        offset: int = 0,
+        repository: str | None = None,
+        entity_type: EntityType | None = None,
+        include_closed: bool = True,
+    ) -> list[EntityRecord]:
+
+        '''
+        Create typed entity list for environment and optional filters.
+
+        Args:
+        environment (EnvironmentName): Runtime environment value.
+        limit (int): Maximum number of rows to return.
+        offset (int): Pagination offset.
+        repository (str | None): Optional repository filter.
+        entity_type (EntityType | None): Optional entity type filter.
+        include_closed (bool): Include closed rows when True.
+
+        Returns:
+        list[EntityRecord]: Typed entity rows.
+        '''
+
+        with self._session_factory() as session:
+            entity_repository = EntityRepository(session)
+            models = entity_repository.list_entities(
+                environment=environment,
+                limit=limit,
+                offset=offset,
+                repository=repository,
+                entity_type=entity_type,
+                include_closed=include_closed,
+            )
+            return [_to_entity_record(model) for model in models]
+
+    def count_entities(
+        self,
+        environment: EnvironmentName,
+        repository: str | None = None,
+        entity_type: EntityType | None = None,
+        include_closed: bool = True,
+    ) -> int:
+
+        '''
+        Create entity count for environment and optional filters.
+
+        Args:
+        environment (EnvironmentName): Runtime environment value.
+        repository (str | None): Optional repository filter.
+        entity_type (EntityType | None): Optional entity type filter.
+        include_closed (bool): Include closed rows when True.
+
+        Returns:
+        int: Entity row count matching filters.
+        '''
+
+        with self._session_factory() as session:
+            entity_repository = EntityRepository(session)
+            return entity_repository.count_entities(
+                environment=environment,
+                repository=repository,
+                entity_type=entity_type,
+                include_closed=include_closed,
+            )
+
+    def touch_entity(self, environment: EnvironmentName, entity_key: str, event_timestamp: datetime) -> bool:
+
+        '''
+        Compute entity last-event update outcome by entity key.
+
+        Args:
+        environment (EnvironmentName): Runtime environment value.
+        entity_key (str): Durable entity key.
+        event_timestamp (datetime): Last event timestamp.
+
+        Returns:
+        bool: True when update succeeded, otherwise False.
+        '''
+
+        with self._session_factory() as session:
+            entity_repository = EntityRepository(session)
+            touched = entity_repository.touch_entity(
+                environment=environment,
+                entity_key=entity_key,
+                event_timestamp=event_timestamp,
+            )
+            session.commit()
+            return touched
 
     def get_job(self, job_id: str) -> JobRecord | None:
 

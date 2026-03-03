@@ -9,6 +9,8 @@ Current operations dashboard capability:
 - Dashboard supports single-job drill-down via `GET /dashboard/jobs/{job_id}/timeline`.
 - Timeline drill-down includes event detail inspection with transition correlation and trace-based pivot filtering.
 - Ingress processing persists deterministic ordering metadata (`source_event_id`, `source_timestamp_or_seq`, `received_at`) and skips stale/out-of-order events without backward lifecycle transitions.
+- Entity metadata is persisted durably in `entities` for stable environment-scoped entity identity.
+- Ingress orchestration ensures entities are created and touched continuously as normalized events are processed.
 - Mutating GitHub side effects enforce lease-epoch validation to reject stale-owner writes before dispatch.
 - Watcher runtime state is persisted durably with stale-watcher reclaim, checkpoint restoration, and explicit operator-required escalation for stuck watchers.
 - Runtime alert signals are emitted for lease violations, duplicate side-effect anomalies, comment-routing failures, outbox backlog growth, and elevated failed transition rates.

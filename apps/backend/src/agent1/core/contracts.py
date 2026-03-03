@@ -71,6 +71,11 @@ class JobKind(str, Enum):
     CI = 'ci'
 
 
+class EntityType(str, Enum):
+    ISSUE = 'issue'
+    PR = 'pr'
+
+
 class JobState(str, Enum):
     AWAITING_CONTEXT = 'awaiting_context'
     READY_TO_EXECUTE = 'ready_to_execute'
@@ -118,6 +123,19 @@ class JobRecord(BaseModel):
     lease_epoch: int = Field(ge=0)
     environment: EnvironmentName
     mode: RuntimeMode
+
+
+class EntityRecord(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    entity_key: str = Field(min_length=1)
+    repository: str = Field(min_length=1)
+    entity_number: int = Field(gt=0)
+    entity_type: EntityType
+    environment: EnvironmentName
+    is_sandbox: bool = False
+    is_closed: bool = False
+    last_event_at: datetime | None = None
 
 
 class PolicyDecision(BaseModel):
@@ -191,6 +209,8 @@ __all__ = [
     'AgentEvent',
     'CommentTarget',
     'CommentTargetType',
+    'EntityRecord',
+    'EntityType',
     'EnvironmentName',
     'EventSource',
     'EventStatus',

@@ -8,6 +8,7 @@ from sqlalchemy.orm import sessionmaker
 
 from agent1.adapters.github.scanner import InMemoryGitHubIngressScanner
 from agent1.adapters.github.scanner import GitHubNotificationScanner
+from agent1.core.contracts import EntityType
 from agent1.core.contracts import RuntimeMode
 from agent1.core.contracts import JobState
 from agent1.core.ingress_contracts import GitHubIngressEvent
@@ -63,6 +64,43 @@ def test_ingress_coordinator_creates_and_advances_issue_job(
 
     assert len(processed_jobs) == 2
     assert processed_jobs[-1].state == JobState.READY_TO_EXECUTE
+
+
+def test_ingress_coordinator_persists_entity_for_normalized_event(
+    session_factory: sessionmaker[Session],
+) -> None:
+    scanner = InMemoryGitHubIngressScanner(
+        [
+            GitHubIngressEvent(
+                event_id='evt_entity_persist_1',
+                repository='Vaquum/Agent1',
+                entity_number=55,
+                entity_type=IngressEntityType.ISSUE,
+                actor='mikkokotila',
+                event_type=IngressEventType.ISSUE_MENTION,
+                timestamp=datetime.now(timezone.utc),
+                details={'label_names': ['agent1-sandbox']},
+            )
+        ]
+    )
+    persistence_service = PersistenceService(session_factory=session_factory)
+    orchestrator = JobOrchestrator(persistence_service=persistence_service)
+    coordinator = GitHubIngressCoordinator(
+        scanner=scanner,
+        orchestrator=orchestrator,
+        normalizer=GitHubIngressNormalizer(),
+    )
+
+    processed_jobs = coordinator.process_once()
+    persisted_entity = persistence_service.get_entity(
+        environment=processed_jobs[0].environment,
+        entity_key='Vaquum/Agent1#55',
+    )
+
+    assert len(processed_jobs) == 1
+    assert persisted_entity is not None
+    assert persisted_entity.entity_type == EntityType.ISSUE
+    assert persisted_entity.is_sandbox is True
 
 
 def test_runtime_ingress_coordinator_uses_persistent_cursor_store() -> None:

@@ -15,3 +15,4 @@ def test_metadata_contains_core_tables() -> None:
     assert 'github_events' in table_names
     assert 'ingress_entity_cursors' in table_names
     assert 'watcher_states' in table_names
+    assert 'entities' in table_names

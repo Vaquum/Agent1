@@ -9,6 +9,8 @@ from sqlalchemy.orm import sessionmaker
 
 from agent1.core.services import persistence_service as persistence_service_module
 from agent1.core.contracts import AgentEvent
+from agent1.core.contracts import EntityRecord
+from agent1.core.contracts import EntityType
 from agent1.core.contracts import EnvironmentName
 from agent1.core.contracts import EventSource
 from agent1.core.contracts import EventStatus
@@ -74,6 +76,48 @@ def test_persistence_service_job_and_event_flow(session_factory: sessionmaker[Se
         event_count = verification_session.query(EventJournalModel).count()
 
     assert event_count == 1
+
+
+def test_persistence_service_entity_create_get_list_and_touch(
+    session_factory: sessionmaker[Session],
+) -> None:
+    service = PersistenceService(session_factory=session_factory)
+    created_entity = service.create_entity(
+        EntityRecord(
+            entity_key='Vaquum/Agent1#2001',
+            repository='Vaquum/Agent1',
+            entity_number=2001,
+            entity_type=EntityType.ISSUE,
+            environment=EnvironmentName.DEV,
+            is_sandbox=True,
+            is_closed=False,
+        ),
+    )
+    fetched_entity = service.get_entity(
+        environment=EnvironmentName.DEV,
+        entity_key='Vaquum/Agent1#2001',
+    )
+    listed_entities = service.list_entities(
+        environment=EnvironmentName.DEV,
+        limit=10,
+        include_closed=False,
+    )
+    touched = service.touch_entity(
+        environment=EnvironmentName.DEV,
+        entity_key='Vaquum/Agent1#2001',
+        event_timestamp=datetime.now(timezone.utc),
+    )
+    count = service.count_entities(
+        environment=EnvironmentName.DEV,
+        include_closed=False,
+    )
+
+    assert created_entity.entity_key == 'Vaquum/Agent1#2001'
+    assert fetched_entity is not None
+    assert fetched_entity.entity_type == EntityType.ISSUE
+    assert len(listed_entities) == 1
+    assert touched is True
+    assert count == 1
 
 
 def test_persistence_service_append_event_emits_structured_log(

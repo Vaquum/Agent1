@@ -4,6 +4,8 @@ from datetime import datetime
 from datetime import timezone
 
 from agent1.core.contracts import AgentEvent
+from agent1.core.contracts import EntityRecord
+from agent1.core.contracts import EntityType
 from agent1.core.contracts import EnvironmentName
 from agent1.core.contracts import EventSource
 from agent1.core.contracts import EventStatus
@@ -14,6 +16,7 @@ from agent1.core.contracts import OutboxRecord
 from agent1.core.contracts import OutboxWriteRequest
 from agent1.core.ingress_contracts import GitHubIngressEvent
 from agent1.core.ingress_contracts import IngressOrderingDecision
+from agent1.core.ingress_contracts import NormalizedIngressEvent
 from agent1.core.ingress_contracts import PersistedIngressEvent
 from agent1.core.services.alert_signal_service import AlertSignalService
 from agent1.core.services.persistence_service import PersistenceService
@@ -36,6 +39,56 @@ class JobOrchestrator:
     def __init__(self, persistence_service: PersistenceService | None = None) -> None:
         self._persistence_service = persistence_service or PersistenceService()
         self._alert_signal_service = AlertSignalService(self._persistence_service)
+
+    def ensure_entity(self, normalized_event: NormalizedIngressEvent) -> EntityRecord:
+
+        '''
+        Create entity persistence guarantee for normalized ingress processing.
+
+        Args:
+        normalized_event (NormalizedIngressEvent): Normalized ingress event payload.
+
+        Returns:
+        EntityRecord: Persisted entity contract for the normalized event scope.
+        '''
+
+        entity = self._persistence_service.get_entity(
+            environment=normalized_event.environment,
+            entity_key=normalized_event.entity_key,
+        )
+        if entity is None:
+            ingress_event_type = str(normalized_event.details.get('ingress_event_type', ''))
+            entity_type = EntityType.PR
+            if ingress_event_type.startswith('issue_'):
+                entity_type = EntityType.ISSUE
+
+            return self._persistence_service.create_entity(
+                EntityRecord(
+                    entity_key=normalized_event.entity_key,
+                    repository=normalized_event.repository,
+                    entity_number=normalized_event.entity_number,
+                    entity_type=entity_type,
+                    environment=normalized_event.environment,
+                    is_sandbox=bool(normalized_event.details.get('is_sandbox_scope', False)),
+                    is_closed=False,
+                    last_event_at=_utc_now(),
+                ),
+            )
+
+        self._persistence_service.touch_entity(
+            environment=normalized_event.environment,
+            entity_key=normalized_event.entity_key,
+            event_timestamp=_utc_now(),
+        )
+        refreshed_entity = self._persistence_service.get_entity(
+            environment=normalized_event.environment,
+            entity_key=normalized_event.entity_key,
+        )
+        if refreshed_entity is None:
+            message = f'Entity missing after touch: {normalized_event.entity_key}'
+            raise ValueError(message)
+
+        return refreshed_entity
 
     def create_job(self, job_record: JobRecord, trace_id: str) -> JobRecord:
 

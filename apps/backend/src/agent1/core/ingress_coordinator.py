@@ -123,6 +123,7 @@ class GitHubIngressCoordinator:
         self._environment = environment
 
     def _process_normalized_event(self, normalized_event: NormalizedIngressEvent) -> JobRecord:
+        self._orchestrator.ensure_entity(normalized_event)
         current_job = self._orchestrator.get_job(normalized_event.job_id)
         if current_job is None:
             current_job = self._orchestrator.create_job(

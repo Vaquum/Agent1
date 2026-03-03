@@ -16,6 +16,7 @@ from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
 
 from agent1.core.contracts import EnvironmentName
+from agent1.core.contracts import EntityType
 from agent1.core.contracts import EventSource
 from agent1.core.contracts import EventStatus
 from agent1.core.contracts import EventType
@@ -89,6 +90,33 @@ class JobTransitionModel(Base):
     transition_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now, nullable=False)
 
     job: Mapped[JobModel] = relationship(back_populates='transitions')
+
+
+class EntityModel(Base):
+    __tablename__ = 'entities'
+    __table_args__ = (
+        UniqueConstraint(
+            'environment',
+            'entity_key',
+            name='uq_entities_environment_entity_key',
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    entity_key: Mapped[str] = mapped_column(String(MAX_ENTITY_KEY_LENGTH), nullable=False, index=True)
+    repository: Mapped[str] = mapped_column(String(MAX_ENTITY_KEY_LENGTH), nullable=False, index=True)
+    entity_number: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    entity_type: Mapped[EntityType] = mapped_column(Enum(EntityType, native_enum=False), nullable=False, index=True)
+    environment: Mapped[EnvironmentName] = mapped_column(
+        Enum(EnvironmentName, native_enum=False),
+        nullable=False,
+        index=True,
+    )
+    is_sandbox: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_closed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    last_event_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now, nullable=False)
 
 
 class EventJournalModel(Base):
@@ -279,6 +307,7 @@ class WatcherStateModel(Base):
 
 
 __all__ = [
+    'EntityModel',
     'EventJournalModel',
     'GitHubEventModel',
     'IngestionCursorModel',

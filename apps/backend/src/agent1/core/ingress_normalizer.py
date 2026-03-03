@@ -190,6 +190,7 @@ class GitHubIngressNormalizer:
             f"#{ingress_event.entity_number}:{job_kind.value}"
         )
         transition_to, transition_reason = self._compute_transition(ingress_event)
+        is_sandbox_scope = self._is_sandbox_scope_event(ingress_event)
 
         return NormalizedIngressEvent(
             event_id=ingress_event.event_id,
@@ -208,6 +209,7 @@ class GitHubIngressNormalizer:
             details={
                 'actor': ingress_event.actor,
                 'ingress_event_type': ingress_event.event_type.value,
+                'is_sandbox_scope': is_sandbox_scope,
                 **ingress_event.details,
             },
         )
