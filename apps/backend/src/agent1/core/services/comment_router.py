@@ -94,6 +94,7 @@ class CommentRouter:
         if ingress_event_type in {
             IngressEventType.ISSUE_MENTION.value,
             IngressEventType.ISSUE_UPDATED.value,
+            IngressEventType.ISSUE_ASSIGNMENT.value,
         }:
             return CommentTarget(
                 target_type=CommentTargetType.ISSUE,

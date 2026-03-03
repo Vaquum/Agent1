@@ -57,6 +57,9 @@ def _utc_now() -> datetime:
 
 def _is_supported_comment_event(normalized_event: NormalizedIngressEvent) -> bool:
     ingress_event_type = str(normalized_event.details.get('ingress_event_type', ''))
+    if ingress_event_type == IngressEventType.ISSUE_ASSIGNMENT.value:
+        return bool(normalized_event.details.get('has_sufficient_context', True))
+
     return ingress_event_type in {
         IngressEventType.ISSUE_MENTION.value,
         IngressEventType.ISSUE_UPDATED.value,

@@ -106,6 +106,13 @@ class GitHubIngressNormalizer:
 
         if (
             self._runtime_mode == RuntimeMode.ACTIVE
+            and self._environment == EnvironmentName.PROD
+            and self._is_sandbox_scope_event(ingress_event)
+        ):
+            return True
+
+        if (
+            self._runtime_mode == RuntimeMode.ACTIVE
             and self._environment == EnvironmentName.DEV
             and self._require_sandbox_scope_for_dev_active
             and self._is_sandbox_scope_event(ingress_event) is False
@@ -163,6 +170,11 @@ class GitHubIngressNormalizer:
         requires_follow_up = bool(ingress_event.details.get('requires_follow_up', False))
         if ingress_event.event_type == IngressEventType.PR_UPDATED and requires_follow_up:
             return JobState.READY_TO_EXECUTE, 'pr_updated_requires_follow_up'
+
+        if ingress_event.event_type == IngressEventType.PR_UPDATED:
+            terminal_decision = str(ingress_event.details.get('human_terminal_decision', '')).strip().lower()
+            if terminal_decision in {'merged', 'closed'}:
+                return JobState.COMPLETED, f"pr_human_terminal_decision_{terminal_decision}"
 
         return None, None
 

@@ -637,7 +637,7 @@ def test_mention_action_executor_shadow_mode_keeps_author_ci_no_write(
     assert updated.state == JobState.AWAITING_CI
 
 
-def test_mention_action_executor_skips_non_mention_event(
+def test_mention_action_executor_skips_unsupported_event(
     session_factory: sessionmaker[Session],
 ) -> None:
     persistence_service = PersistenceService(session_factory=session_factory)
@@ -653,7 +653,7 @@ def test_mention_action_executor_skips_non_mention_event(
     )
 
     updated = executor.execute_for_event(
-        normalized_event=_create_normalized_event('issue_assignment'),
+        normalized_event=_create_normalized_event('unsupported_event'),
         current_job=created,
         orchestrator=orchestrator,
     )
@@ -803,6 +803,37 @@ def test_mention_action_executor_posts_clarification_for_insufficient_assignment
     assert len(fake_client.comment_calls) == 1
     assert fake_client.comment_calls[0]['body'] == 'Need clarification for Vaquum/Agent1#25'
     assert updated.state == JobState.BLOCKED
+
+
+def test_mention_action_executor_executes_direct_assignment_with_sufficient_context(
+    session_factory: sessionmaker[Session],
+) -> None:
+    persistence_service = PersistenceService(session_factory=session_factory)
+    orchestrator = JobOrchestrator(persistence_service=persistence_service)
+    created = orchestrator.create_job(_create_record('Vaquum_Agent1#25:issue'), trace_id='trc_create')
+    fake_client = _FakeGitHubClient()
+    executor = MentionActionExecutor(
+        response_template='Ack {entity_key}',
+        clarification_template='Need clarification for {entity_key}',
+        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
+        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
+        github_client=fake_client,
+    )
+
+    updated = executor.execute_for_event(
+        normalized_event=_create_normalized_event(
+            'issue_assignment',
+            details={
+                'has_sufficient_context': True,
+            },
+        ),
+        current_job=created,
+        orchestrator=orchestrator,
+    )
+
+    assert len(fake_client.comment_calls) == 1
+    assert fake_client.comment_calls[0]['body'] == 'Ack Vaquum/Agent1#25'
+    assert updated.state == JobState.AWAITING_HUMAN_FEEDBACK
 
 
 def test_mention_action_executor_rejects_stale_lease_mutating_write(

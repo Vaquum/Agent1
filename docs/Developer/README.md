@@ -80,11 +80,12 @@ This directory contains developer-facing documentation for architecture, workflo
   - watcher lifecycle persistence in `watcher_states` with durable fields `next_check_at`, `last_heartbeat_at`, `idle_cycles`, `watch_deadline_at`, and `checkpoint_cursor`,
   - stale-watcher sweeper reclaim with checkpoint restoration and operator-required escalation for irrecoverably stuck watchers,
   - runtime mode propagation (`active`, `shadow`, `dry_run`) from controls into created jobs,
-  - active-scope repository filtering and dev sandbox-scope filtering during normalization,
+  - active-scope repository filtering, dev sandbox-scope inclusion filtering, and prod active-mode sandbox exclusion filtering during normalization,
   - cycle heartbeat and failure logging per processing cycle,
   - runtime alert-signal checks for outbox backlog growth and elevated failed transition rates.
 - First deterministic side-effect path supports:
   - issue/PR mention detection in normalized ingress events,
+  - sufficient-context issue assignment direct execution with deterministic state advancement,
   - self-trigger prevention by ignoring comment-driven ingress events from the configured agent actor,
   - bot-origin review-context filtering by ignoring comment-driven ingress events from configured actor suffixes,
   - insufficient-context issue assignment clarification comment posting,
@@ -102,6 +103,7 @@ This directory contains developer-facing documentation for architecture, workflo
   - deterministic clarification transition `awaiting_context -> blocked` after clarification request delivery,
   - deterministic resume transition `blocked -> ready_to_execute -> awaiting_human_feedback` on sufficient context updates,
   - deterministic reviewer follow-up transition `awaiting_human_feedback -> ready_to_execute -> awaiting_human_feedback`,
+  - deterministic reviewer terminal transition `awaiting_human_feedback -> completed` on PR updates carrying `human_terminal_decision` (`merged` or `closed`),
   - deterministic state advancement `ready_to_execute -> executing -> awaiting_human_feedback`,
   - lease-epoch validation before mutating GitHub side effects to reject stale-owner writes,
   - blocked transition on comment post failure.

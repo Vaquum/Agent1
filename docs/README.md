@@ -11,6 +11,8 @@ Current operations dashboard capability:
 - Ingress processing persists deterministic ordering metadata (`source_event_id`, `source_timestamp_or_seq`, `received_at`) and skips stale/out-of-order events without backward lifecycle transitions.
 - Entity metadata is persisted durably in `entities` for stable environment-scoped entity identity.
 - Ingress orchestration ensures entities are created and touched continuously as normalized events are processed.
+- PR reviewer lifecycle scenarios now cover multi-round follow-up progression and terminal completion when human `merged`/`closed` decisions are observed on PR updates.
+- Concurrent dev/prod isolation scenarios now assert that dev active handles sandbox-marked entities while prod active ignores sandbox scope to prevent duplicate side effects.
 - Mutating GitHub side effects enforce lease-epoch validation to reject stale-owner writes before dispatch.
 - Side-effect attempt lifecycle is persisted in `action_attempts` with `started`, `succeeded`, `failed`, and `aborted` statuses linked to job/outbox scope.
 - Deterministic comment routing targets are now durably scaffolded in `comment_targets` with job/outbox linkage.

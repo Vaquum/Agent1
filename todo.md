@@ -80,16 +80,16 @@ Tracking list of remaining items against `spec.md` acceptance criteria.
 - [x] P2: Nightly E2E slice 1 - add browser scenarios to nightly workflow.
 - [x] P2: Nightly E2E slice 2 - add artifact retention and failure summary output.
 - [x] P2: Nightly E2E slice 3 - add schedule/timeout/concurrency guardrails.
-- [ ] P2: Scenario direct-assignment slice 1 - implement deterministic pytest scenario.
-- [ ] P2: Scenario direct-assignment slice 2 - register explicit scenario ID in catalog.
-- [ ] P2: Scenario PR-mention slice 1 - implement deterministic pytest scenario.
-- [ ] P2: Scenario PR-mention slice 2 - register explicit scenario ID in catalog.
-- [ ] P2: Scenario change-request slice 1 - implement deterministic follow-up scenario.
-- [ ] P2: Scenario change-request slice 2 - register explicit scenario ID in catalog.
-- [ ] P2: Scenario multi-round lifecycle slice 1 - implement lifecycle scenario through human terminal decision.
-- [ ] P2: Scenario multi-round lifecycle slice 2 - assert deterministic state/side-effect progression.
-- [ ] P2: Scenario dev+prod isolation slice 1 - build concurrent runtime harness with scoped environments.
-- [ ] P2: Scenario dev+prod isolation slice 2 - assert no duplicate side effects across environments.
+- [x] P2: Scenario direct-assignment slice 1 - implement deterministic pytest scenario.
+- [x] P2: Scenario direct-assignment slice 2 - register explicit scenario ID in catalog.
+- [x] P2: Scenario PR-mention slice 1 - implement deterministic pytest scenario.
+- [x] P2: Scenario PR-mention slice 2 - register explicit scenario ID in catalog.
+- [x] P2: Scenario change-request slice 1 - implement deterministic follow-up scenario.
+- [x] P2: Scenario change-request slice 2 - register explicit scenario ID in catalog.
+- [x] P2: Scenario multi-round lifecycle slice 1 - implement lifecycle scenario through human terminal decision.
+- [x] P2: Scenario multi-round lifecycle slice 2 - assert deterministic state/side-effect progression.
+- [x] P2: Scenario dev+prod isolation slice 1 - build concurrent runtime harness with scoped environments.
+- [x] P2: Scenario dev+prod isolation slice 2 - assert no duplicate side effects across environments.
 
 ## Deployment And Rollout
 
