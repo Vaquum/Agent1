@@ -1,4 +1,5 @@
 __all__ = [
+    'action_attempt_repository',
     'entity_repository',
     'event_repository',
     'github_event_repository',

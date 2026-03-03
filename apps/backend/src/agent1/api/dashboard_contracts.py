@@ -7,12 +7,14 @@ from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
 
+from agent1.core.contracts import ActionAttemptStatus
 from agent1.core.contracts import EnvironmentName
 from agent1.core.contracts import EventSource
 from agent1.core.contracts import EventStatus
 from agent1.core.contracts import EventType
 from agent1.core.contracts import JobKind
 from agent1.core.contracts import JobState
+from agent1.core.contracts import OutboxActionType
 from agent1.core.contracts import RuntimeMode
 
 
@@ -52,6 +54,19 @@ class DashboardEventSummary(BaseModel):
     details: dict[str, Any] = Field(default_factory=dict)
 
 
+class DashboardActionAttemptSummary(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    attempt_id: str = Field(min_length=1)
+    outbox_id: str = Field(min_length=1)
+    job_id: str = Field(min_length=1)
+    action_type: OutboxActionType
+    status: ActionAttemptStatus
+    error_message: str | None = None
+    attempt_started_at: datetime
+    attempt_completed_at: datetime | None = None
+
+
 class DashboardPageSummary(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
@@ -87,11 +102,14 @@ class DashboardJobTimelineResponse(BaseModel):
     job: DashboardJobSummary
     transitions_page: DashboardPageSummary
     events_page: DashboardPageSummary
+    action_attempts_page: DashboardPageSummary
     transitions: list[DashboardTransitionSummary]
     events: list[DashboardEventSummary]
+    action_attempts: list[DashboardActionAttemptSummary]
 
 
 __all__ = [
+    'DashboardActionAttemptSummary',
     'DashboardEventSummary',
     'DashboardJobTimelineResponse',
     'DashboardJobSummary',

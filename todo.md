@@ -8,9 +8,9 @@ Tracking list of remaining items against `spec.md` acceptance criteria.
 - [x] P1: `entities` slice 2 - add `EntityRepository` and `PersistenceService` APIs for create/get/list flows.
 - [x] P1: `entities` slice 3 - wire orchestrator/ingress usage and add tests + docs.
 - [x] P1: Add `github_events` persistence model, repository, migration, and ingestion integration.
-- [ ] P1: `action_attempts` slice 1 - add contracts/model + migration linked to job/outbox scopes.
-- [ ] P1: `action_attempts` slice 2 - persist dispatcher attempt lifecycle (`started`, `succeeded`, `failed`, `aborted`) with error metadata.
-- [ ] P1: `action_attempts` slice 3 - expose attempt timeline queries and add tests + docs.
+- [x] P1: `action_attempts` slice 1 - add contracts/model + migration linked to job/outbox scopes.
+- [x] P1: `action_attempts` slice 2 - persist dispatcher attempt lifecycle (`started`, `succeeded`, `failed`, `aborted`) with error metadata.
+- [x] P1: `action_attempts` slice 3 - expose attempt timeline queries and add tests + docs.
 - [ ] P3: `audit_runs` slice 1 - add contracts/model + migration for audit run snapshots.
 - [ ] P3: `audit_runs` slice 2 - implement repository/service append + list APIs.
 - [ ] P3: `audit_runs` slice 3 - wire audit execution flow and add tests + docs.

@@ -34,3 +34,4 @@ def test_alembic_upgrade_head_creates_core_tables(tmp_path: Path, monkeypatch: M
     assert 'ingress_entity_cursors' in table_names
     assert 'watcher_states' in table_names
     assert 'entities' in table_names
+    assert 'action_attempts' in table_names

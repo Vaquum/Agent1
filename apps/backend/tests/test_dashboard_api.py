@@ -13,6 +13,7 @@ from agent1.api.dashboard import get_dashboard_job_timeline
 from agent1.api.dashboard import get_dashboard_overview
 from agent1.api.dashboard import get_dashboard_service
 from agent1.api.dashboard import router
+from agent1.api.dashboard_contracts import DashboardActionAttemptSummary
 from agent1.api.dashboard_contracts import DashboardEventSummary
 from agent1.api.dashboard_contracts import DashboardJobTimelineResponse
 from agent1.api.dashboard_contracts import DashboardJobSummary
@@ -26,6 +27,8 @@ from agent1.core.contracts import EventStatus
 from agent1.core.contracts import EventType
 from agent1.core.contracts import JobKind
 from agent1.core.contracts import JobState
+from agent1.core.contracts import ActionAttemptStatus
+from agent1.core.contracts import OutboxActionType
 from agent1.core.contracts import RuntimeMode
 
 
@@ -128,6 +131,7 @@ class _FakeDashboardService:
             ),
             transitions_page=DashboardPageSummary(limit=limit, offset=offset, total=1),
             events_page=DashboardPageSummary(limit=limit, offset=offset, total=1),
+            action_attempts_page=DashboardPageSummary(limit=limit, offset=offset, total=1),
             transitions=[
                 DashboardTransitionSummary(
                     job_id=job_id,
@@ -147,6 +151,18 @@ class _FakeDashboardService:
                     event_type=EventType.STATE_TRANSITION,
                     status=EventStatus.OK,
                     details={'reason': 'context_refreshed'},
+                )
+            ],
+            action_attempts=[
+                DashboardActionAttemptSummary(
+                    attempt_id='outbox_dashboard_api_1:1',
+                    outbox_id='outbox_dashboard_api_1',
+                    job_id=job_id,
+                    action_type=OutboxActionType.ISSUE_COMMENT,
+                    status=ActionAttemptStatus.SUCCEEDED,
+                    error_message=None,
+                    attempt_started_at=now,
+                    attempt_completed_at=now,
                 )
             ],
         )
@@ -206,6 +222,7 @@ def test_get_dashboard_job_timeline_uses_dashboard_service() -> None:
     assert response.job.job_id == 'job_dashboard_api_1'
     assert len(response.transitions) == 1
     assert len(response.events) == 1
+    assert len(response.action_attempts) == 1
 
 
 def test_get_dashboard_job_timeline_raises_not_found() -> None:

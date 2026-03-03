@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker
 
 from agent1.core.contracts import AgentEvent
+from agent1.core.contracts import ActionAttemptRecord
+from agent1.core.contracts import ActionAttemptStatus
 from agent1.core.contracts import EntityRecord
 from agent1.core.contracts import EntityType
 from agent1.core.contracts import EnvironmentName
@@ -19,10 +21,12 @@ from agent1.core.ingress_contracts import GitHubIngressEvent
 from agent1.core.ingress_contracts import PersistedIngressEvent
 from agent1.core.watcher import WatcherState
 from agent1.core.services.structured_event_logger import log_agent_event
+from agent1.db.models import ActionAttemptModel
 from agent1.db.models import JobModel
 from agent1.db.models import EntityModel
 from agent1.db.models import OutboxEntryModel
 from agent1.db.models import WatcherStateModel
+from agent1.db.repositories.action_attempt_repository import ActionAttemptRepository
 from agent1.db.repositories.entity_repository import EntityRepository
 from agent1.db.repositories.event_repository import EventRepository
 from agent1.db.repositories.github_event_repository import GitHubEventRepository
@@ -77,6 +81,32 @@ def _to_entity_record(model: EntityModel) -> EntityRecord:
         is_sandbox=model.is_sandbox,
         is_closed=model.is_closed,
         last_event_at=model.last_event_at,
+    )
+
+
+def _to_action_attempt_record(model: ActionAttemptModel) -> ActionAttemptRecord:
+
+    '''
+    Create typed action-attempt contract from persisted action-attempt model.
+
+    Args:
+    model (ActionAttemptModel): Persisted action-attempt model row.
+
+    Returns:
+    ActionAttemptRecord: Typed action-attempt contract.
+    '''
+
+    return ActionAttemptRecord(
+        attempt_id=model.attempt_id,
+        outbox_id=model.outbox_id,
+        job_id=model.job_id,
+        entity_key=model.entity_key,
+        environment=model.environment,
+        action_type=model.action_type,
+        status=model.status,
+        error_message=model.error_message,
+        attempt_started_at=model.attempt_started_at,
+        attempt_completed_at=model.attempt_completed_at,
     )
 
 
@@ -288,6 +318,167 @@ class PersistenceService:
             )
             session.commit()
             return touched
+
+    def append_action_attempt(self, record: ActionAttemptRecord) -> ActionAttemptRecord:
+
+        '''
+        Create persisted action-attempt row from typed attempt contract.
+
+        Args:
+        record (ActionAttemptRecord): Typed action-attempt contract to persist.
+
+        Returns:
+        ActionAttemptRecord: Persisted typed action-attempt contract.
+        '''
+
+        with self._session_factory() as session:
+            repository = ActionAttemptRepository(session)
+            model = repository.create_action_attempt(
+                attempt_id=record.attempt_id,
+                outbox_id=record.outbox_id,
+                job_id=record.job_id,
+                entity_key=record.entity_key,
+                environment=record.environment,
+                action_type=record.action_type,
+                status=record.status,
+                error_message=record.error_message,
+                attempt_started_at=record.attempt_started_at,
+                attempt_completed_at=record.attempt_completed_at,
+            )
+            session.commit()
+            return _to_action_attempt_record(model)
+
+    def get_action_attempt(
+        self,
+        environment: EnvironmentName,
+        attempt_id: str,
+    ) -> ActionAttemptRecord | None:
+
+        '''
+        Create action-attempt lookup result by environment and attempt identifier.
+
+        Args:
+        environment (EnvironmentName): Runtime environment value.
+        attempt_id (str): Durable attempt identifier.
+
+        Returns:
+        ActionAttemptRecord | None: Typed action-attempt contract or None when missing.
+        '''
+
+        with self._session_factory() as session:
+            repository = ActionAttemptRepository(session)
+            model = repository.get_action_attempt(environment=environment, attempt_id=attempt_id)
+            if model is None:
+                return None
+
+            return _to_action_attempt_record(model)
+
+    def mark_action_attempt_status(
+        self,
+        environment: EnvironmentName,
+        attempt_id: str,
+        status: ActionAttemptStatus,
+        completion_timestamp: datetime,
+        error_message: str | None = None,
+    ) -> bool:
+
+        '''
+        Compute action-attempt status update outcome with completion metadata.
+
+        Args:
+        environment (EnvironmentName): Runtime environment value.
+        attempt_id (str): Durable attempt identifier.
+        status (ActionAttemptStatus): Target attempt lifecycle status.
+        completion_timestamp (datetime): Completion timestamp.
+        error_message (str | None): Optional deterministic failure summary.
+
+        Returns:
+        bool: True when status update succeeded, otherwise False.
+        '''
+
+        with self._session_factory() as session:
+            repository = ActionAttemptRepository(session)
+            updated = repository.mark_action_attempt_status(
+                environment=environment,
+                attempt_id=attempt_id,
+                status=status,
+                completion_timestamp=completion_timestamp,
+                error_message=error_message,
+            )
+            session.commit()
+            return updated
+
+    def list_action_attempts_for_outbox(
+        self,
+        outbox_id: str,
+        limit: int,
+        offset: int = 0,
+    ) -> list[ActionAttemptRecord]:
+
+        '''
+        Create action-attempt list for one outbox identifier.
+
+        Args:
+        outbox_id (str): Durable outbox identifier.
+        limit (int): Maximum row count to return.
+        offset (int): Pagination offset.
+
+        Returns:
+        list[ActionAttemptRecord]: Ordered typed action-attempt rows.
+        '''
+
+        with self._session_factory() as session:
+            repository = ActionAttemptRepository(session)
+            models = repository.list_action_attempts_for_outbox(
+                outbox_id=outbox_id,
+                limit=limit,
+                offset=offset,
+            )
+            return [_to_action_attempt_record(model) for model in models]
+
+    def list_action_attempts_for_job(
+        self,
+        job_id: str,
+        limit: int,
+        offset: int = 0,
+    ) -> list[ActionAttemptRecord]:
+
+        '''
+        Create action-attempt list for one job identifier.
+
+        Args:
+        job_id (str): Durable job identifier.
+        limit (int): Maximum row count to return.
+        offset (int): Pagination offset.
+
+        Returns:
+        list[ActionAttemptRecord]: Ordered typed action-attempt rows.
+        '''
+
+        with self._session_factory() as session:
+            repository = ActionAttemptRepository(session)
+            models = repository.list_action_attempts_for_job(
+                job_id=job_id,
+                limit=limit,
+                offset=offset,
+            )
+            return [_to_action_attempt_record(model) for model in models]
+
+    def count_action_attempts_for_job(self, job_id: str) -> int:
+
+        '''
+        Create action-attempt count for one job identifier.
+
+        Args:
+        job_id (str): Durable job identifier.
+
+        Returns:
+        int: Action-attempt row count for the provided job.
+        '''
+
+        with self._session_factory() as session:
+            repository = ActionAttemptRepository(session)
+            return repository.count_action_attempts_for_job(job_id=job_id)
 
     def get_job(self, job_id: str) -> JobRecord | None:
 

@@ -6,6 +6,8 @@ from typing import Any
 
 from agent1.adapters.github.client import GitHubApiClient
 from agent1.adapters.github.client import UrlLibGitHubApiClient
+from agent1.core.contracts import ActionAttemptRecord
+from agent1.core.contracts import ActionAttemptStatus
 from agent1.core.contracts import AgentEvent
 from agent1.core.contracts import EventSource
 from agent1.core.contracts import EventStatus
@@ -20,6 +22,7 @@ DEFAULT_DISPATCH_BATCH_SIZE = 20
 DEFAULT_RETRY_AFTER_SECONDS = 30
 DISPATCHER_RECONCILIATION_ABORT_REASON = 'outbox_reconciliation_detected_confirmed_duplicate'
 DISPATCHER_LEASE_VALIDATION_ABORT_REASON = 'lease_epoch_validation_failed'
+DISPATCHER_CONFIRMATION_ABORT_REASON = 'outbox_confirmation_failed'
 
 
 def _utc_now() -> datetime:
@@ -74,6 +77,22 @@ class OutboxDispatcher:
                 continue
 
             sent_lease_epoch = outbox_entry.lease_epoch + 1
+            attempt_id = self._create_attempt_id(outbox_entry)
+            attempt_started_at = _utc_now()
+            self._persistence_service.append_action_attempt(
+                ActionAttemptRecord(
+                    attempt_id=attempt_id,
+                    outbox_id=outbox_entry.outbox_id,
+                    job_id=outbox_entry.job_id,
+                    entity_key=outbox_entry.entity_key,
+                    environment=outbox_entry.environment,
+                    action_type=outbox_entry.action_type,
+                    status=ActionAttemptStatus.STARTED,
+                    error_message=None,
+                    attempt_started_at=attempt_started_at,
+                    attempt_completed_at=None,
+                ),
+            )
             try:
                 self._dispatch_outbox_entry(outbox_entry)
             except Exception as error:
@@ -83,6 +102,13 @@ class OutboxDispatcher:
                     error_message=str(error),
                     retry_after_seconds=self._retry_after_seconds,
                 )
+                self._persistence_service.mark_action_attempt_status(
+                    environment=outbox_entry.environment,
+                    attempt_id=attempt_id,
+                    status=ActionAttemptStatus.FAILED,
+                    completion_timestamp=_utc_now(),
+                    error_message=str(error),
+                )
                 continue
 
             confirmed = self._persistence_service.mark_outbox_entry_confirmed(
@@ -90,9 +116,39 @@ class OutboxDispatcher:
                 expected_lease_epoch=sent_lease_epoch,
             )
             if confirmed:
+                self._persistence_service.mark_action_attempt_status(
+                    environment=outbox_entry.environment,
+                    attempt_id=attempt_id,
+                    status=ActionAttemptStatus.SUCCEEDED,
+                    completion_timestamp=_utc_now(),
+                    error_message=None,
+                )
                 confirmed_count = confirmed_count + 1
+                continue
+
+            self._persistence_service.mark_action_attempt_status(
+                environment=outbox_entry.environment,
+                attempt_id=attempt_id,
+                status=ActionAttemptStatus.ABORTED,
+                completion_timestamp=_utc_now(),
+                error_message=DISPATCHER_CONFIRMATION_ABORT_REASON,
+            )
 
         return confirmed_count
+
+    def _create_attempt_id(self, outbox_entry: OutboxRecord) -> str:
+
+        '''
+        Create deterministic attempt identifier for one outbox dispatch attempt.
+
+        Args:
+        outbox_entry (OutboxRecord): Outbox entry candidate for dispatch.
+
+        Returns:
+        str: Deterministic attempt identifier.
+        '''
+
+        return f"{outbox_entry.outbox_id}:{outbox_entry.attempt_count + 1}"
 
     def _reconcile_before_retry(self, outbox_entry: OutboxRecord) -> bool:
 
@@ -128,6 +184,21 @@ class OutboxDispatcher:
             outbox_id=outbox_entry.outbox_id,
             expected_lease_epoch=outbox_entry.lease_epoch,
             abort_reason=DISPATCHER_RECONCILIATION_ABORT_REASON,
+        )
+        now = _utc_now()
+        self._persistence_service.append_action_attempt(
+            ActionAttemptRecord(
+                attempt_id=self._create_attempt_id(outbox_entry),
+                outbox_id=outbox_entry.outbox_id,
+                job_id=outbox_entry.job_id,
+                entity_key=outbox_entry.entity_key,
+                environment=outbox_entry.environment,
+                action_type=outbox_entry.action_type,
+                status=ActionAttemptStatus.ABORTED,
+                error_message=DISPATCHER_RECONCILIATION_ABORT_REASON,
+                attempt_started_at=now,
+                attempt_completed_at=now,
+            ),
         )
         self._alert_signal_service.emit_duplicate_side_effect_anomaly(
             environment=outbox_entry.environment,
@@ -180,6 +251,21 @@ class OutboxDispatcher:
             outbox_id=outbox_entry.outbox_id,
             expected_lease_epoch=outbox_entry.lease_epoch,
             abort_reason=DISPATCHER_LEASE_VALIDATION_ABORT_REASON,
+        )
+        now = _utc_now()
+        self._persistence_service.append_action_attempt(
+            ActionAttemptRecord(
+                attempt_id=self._create_attempt_id(outbox_entry),
+                outbox_id=outbox_entry.outbox_id,
+                job_id=outbox_entry.job_id,
+                entity_key=outbox_entry.entity_key,
+                environment=outbox_entry.environment,
+                action_type=outbox_entry.action_type,
+                status=ActionAttemptStatus.ABORTED,
+                error_message=DISPATCHER_LEASE_VALIDATION_ABORT_REASON,
+                attempt_started_at=now,
+                attempt_completed_at=now,
+            ),
         )
         current_lease_epoch = outbox_entry.job_lease_epoch
         current_job = self._persistence_service.get_job(outbox_entry.job_id)

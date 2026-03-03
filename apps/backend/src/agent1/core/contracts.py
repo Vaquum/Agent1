@@ -56,6 +56,13 @@ class OutboxStatus(str, Enum):
     ABORTED = 'aborted'
 
 
+class ActionAttemptStatus(str, Enum):
+    STARTED = 'started'
+    SUCCEEDED = 'succeeded'
+    FAILED = 'failed'
+    ABORTED = 'aborted'
+
+
 class WatcherStatus(str, Enum):
     ACTIVE = 'active'
     RECLAIMED = 'reclaimed'
@@ -205,7 +212,24 @@ class OutboxWriteRequest(BaseModel):
     next_attempt_at: datetime | None = None
 
 
+class ActionAttemptRecord(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    attempt_id: str = Field(min_length=1)
+    outbox_id: str = Field(min_length=1)
+    job_id: str = Field(min_length=1)
+    entity_key: str = Field(min_length=1)
+    environment: EnvironmentName
+    action_type: OutboxActionType
+    status: ActionAttemptStatus
+    error_message: str | None = None
+    attempt_started_at: datetime
+    attempt_completed_at: datetime | None = None
+
+
 __all__ = [
+    'ActionAttemptRecord',
+    'ActionAttemptStatus',
     'AgentEvent',
     'CommentTarget',
     'CommentTargetType',

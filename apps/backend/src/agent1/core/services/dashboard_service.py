@@ -3,6 +3,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker
 
+from agent1.api.dashboard_contracts import DashboardActionAttemptSummary
 from agent1.api.dashboard_contracts import DashboardEventSummary
 from agent1.api.dashboard_contracts import DashboardJobTimelineResponse
 from agent1.api.dashboard_contracts import DashboardJobSummary
@@ -11,9 +12,11 @@ from agent1.api.dashboard_contracts import DashboardOverviewResponse
 from agent1.api.dashboard_contracts import DashboardPageSummary
 from agent1.api.dashboard_contracts import DashboardTransitionSummary
 from agent1.core.contracts import EventStatus
+from agent1.db.models import ActionAttemptModel
 from agent1.db.models import EventJournalModel
 from agent1.db.models import JobModel
 from agent1.db.models import JobTransitionModel
+from agent1.db.repositories.action_attempt_repository import ActionAttemptRepository
 from agent1.db.repositories.event_repository import EventRepository
 from agent1.db.repositories.job_repository import JobRepository
 from agent1.db.session import create_session_factory
@@ -107,6 +110,30 @@ def _to_event_summary(event_model: EventJournalModel) -> DashboardEventSummary:
         event_type=event_model.event_type,
         status=event_model.status,
         details=event_model.details,
+    )
+
+
+def _to_action_attempt_summary(attempt_model: ActionAttemptModel) -> DashboardActionAttemptSummary:
+
+    '''
+    Create dashboard action-attempt summary payload from persisted attempt row.
+
+    Args:
+    attempt_model (ActionAttemptModel): Persisted action-attempt row.
+
+    Returns:
+    DashboardActionAttemptSummary: Dashboard action-attempt summary payload.
+    '''
+
+    return DashboardActionAttemptSummary(
+        attempt_id=attempt_model.attempt_id,
+        outbox_id=attempt_model.outbox_id,
+        job_id=attempt_model.job_id,
+        action_type=attempt_model.action_type,
+        status=attempt_model.status,
+        error_message=attempt_model.error_message,
+        attempt_started_at=attempt_model.attempt_started_at,
+        attempt_completed_at=attempt_model.attempt_completed_at,
     )
 
 
@@ -236,6 +263,7 @@ class DashboardService:
         with self._session_factory() as session:
             job_repository = JobRepository(session)
             event_repository = EventRepository(session)
+            action_attempt_repository = ActionAttemptRepository(session)
             job_model = job_repository.get_job_by_job_id(normalized_job_id)
             if job_model is None:
                 return None
@@ -250,8 +278,16 @@ class DashboardService:
                 offset=offset,
                 job_id=normalized_job_id,
             )
+            action_attempts = action_attempt_repository.list_action_attempts_for_job(
+                job_id=normalized_job_id,
+                limit=limit,
+                offset=offset,
+            )
             transitions_total = job_repository.count_transitions(job_id=normalized_job_id)
             events_total = event_repository.count_events(job_id=normalized_job_id)
+            action_attempts_total = action_attempt_repository.count_action_attempts_for_job(
+                job_id=normalized_job_id,
+            )
             return DashboardJobTimelineResponse(
                 job=_to_job_summary(job_model),
                 transitions_page=DashboardPageSummary(
@@ -264,11 +300,20 @@ class DashboardService:
                     offset=offset,
                     total=events_total,
                 ),
+                action_attempts_page=DashboardPageSummary(
+                    limit=limit,
+                    offset=offset,
+                    total=action_attempts_total,
+                ),
                 transitions=[
                     _to_transition_summary(transition_model)
                     for transition_model in transitions
                 ],
                 events=[_to_event_summary(event_model) for event_model in events],
+                action_attempts=[
+                    _to_action_attempt_summary(attempt_model)
+                    for attempt_model in action_attempts
+                ],
             )
 
 

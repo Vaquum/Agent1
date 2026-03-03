@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker
 
 from agent1.adapters.github.client import GitHubApiClient
+from agent1.core.contracts import ActionAttemptStatus
 from agent1.core.contracts import EnvironmentName
 from agent1.core.contracts import JobKind
 from agent1.core.contracts import JobRecord
@@ -21,6 +22,8 @@ from agent1.core.services.alert_signal_service import LEASE_VIOLATIONS_ALERT
 from agent1.core.services.alert_signal_service import OUTBOX_BACKLOG_GROWTH_ALERT
 from agent1.core.services.alert_signal_service import AlertSignalService
 from agent1.core.services.outbox_dispatcher import OutboxDispatcher
+from agent1.core.services.outbox_dispatcher import DISPATCHER_LEASE_VALIDATION_ABORT_REASON
+from agent1.core.services.outbox_dispatcher import DISPATCHER_RECONCILIATION_ABORT_REASON
 from agent1.core.services.persistence_service import PersistenceService
 from agent1.db.models import EventJournalModel
 
@@ -128,6 +131,10 @@ def test_outbox_dispatcher_confirms_issue_comment_entry(
 
     confirmed_count = dispatcher.dispatch_once()
     persisted_outbox = persistence_service.get_outbox_entry_by_outbox_id(created_outbox.outbox_id)
+    action_attempt = persistence_service.get_action_attempt(
+        environment=created_job.environment,
+        attempt_id='outbox_dispatch_1:1',
+    )
 
     assert confirmed_count == 1
     assert github_client.issue_comments == [('Vaquum/Agent1', 510, 'dispatch hello')]
@@ -135,6 +142,9 @@ def test_outbox_dispatcher_confirms_issue_comment_entry(
     assert persisted_outbox.status == OutboxStatus.CONFIRMED
     assert persisted_outbox.attempt_count == 1
     assert persisted_outbox.lease_epoch == 2
+    assert action_attempt is not None
+    assert action_attempt.status == ActionAttemptStatus.SUCCEEDED
+    assert action_attempt.attempt_completed_at is not None
 
 
 def test_outbox_dispatcher_marks_failed_issue_comment_entry(
@@ -173,6 +183,10 @@ def test_outbox_dispatcher_marks_failed_issue_comment_entry(
 
     confirmed_count = dispatcher.dispatch_once()
     persisted_outbox = persistence_service.get_outbox_entry_by_outbox_id(created_outbox.outbox_id)
+    action_attempt = persistence_service.get_action_attempt(
+        environment=created_job.environment,
+        attempt_id='outbox_dispatch_2:1',
+    )
 
     assert confirmed_count == 0
     assert github_client.issue_comments == []
@@ -182,6 +196,9 @@ def test_outbox_dispatcher_marks_failed_issue_comment_entry(
     assert persisted_outbox.lease_epoch == 2
     assert persisted_outbox.last_error == 'issue_comment_failure'
     assert persisted_outbox.next_attempt_at is not None
+    assert action_attempt is not None
+    assert action_attempt.status == ActionAttemptStatus.FAILED
+    assert action_attempt.error_message == 'issue_comment_failure'
 
 
 def test_outbox_dispatcher_confirms_pr_review_reply_entry(
@@ -220,11 +237,17 @@ def test_outbox_dispatcher_confirms_pr_review_reply_entry(
 
     confirmed_count = dispatcher.dispatch_once()
     persisted_outbox = persistence_service.get_outbox_entry_by_outbox_id(created_outbox.outbox_id)
+    action_attempt = persistence_service.get_action_attempt(
+        environment=created_job.environment,
+        attempt_id='outbox_dispatch_3:1',
+    )
 
     assert confirmed_count == 1
     assert github_client.review_replies == [('Vaquum/Agent1', 512, 600, 'review reply')]
     assert persisted_outbox is not None
     assert persisted_outbox.status == OutboxStatus.CONFIRMED
+    assert action_attempt is not None
+    assert action_attempt.status == ActionAttemptStatus.SUCCEEDED
 
 
 def test_outbox_dispatcher_aborts_when_job_lease_is_stale(
@@ -263,6 +286,10 @@ def test_outbox_dispatcher_aborts_when_job_lease_is_stale(
 
     confirmed_count = dispatcher.dispatch_once()
     persisted_outbox = persistence_service.get_outbox_entry_by_outbox_id(created_outbox.outbox_id)
+    action_attempt = persistence_service.get_action_attempt(
+        environment=created_job.environment,
+        attempt_id='outbox_dispatch_4:1',
+    )
     with session_factory() as verification_session:
         alert_events = [
             event
@@ -275,6 +302,9 @@ def test_outbox_dispatcher_aborts_when_job_lease_is_stale(
     assert persisted_outbox is not None
     assert persisted_outbox.status == OutboxStatus.ABORTED
     assert len(alert_events) == 1
+    assert action_attempt is not None
+    assert action_attempt.status == ActionAttemptStatus.ABORTED
+    assert action_attempt.error_message == DISPATCHER_LEASE_VALIDATION_ABORT_REASON
 
 
 def test_outbox_dispatcher_emits_duplicate_side_effect_anomaly_alert(
@@ -352,6 +382,10 @@ def test_outbox_dispatcher_emits_duplicate_side_effect_anomaly_alert(
 
     confirmed_count = dispatcher.dispatch_once()
     persisted_outbox = persistence_service.get_outbox_entry_by_outbox_id(created_outbox.outbox_id)
+    attempts = persistence_service.list_action_attempts_for_outbox(
+        outbox_id=created_outbox.outbox_id,
+        limit=10,
+    )
     with session_factory() as verification_session:
         alert_events = [
             event
@@ -363,6 +397,9 @@ def test_outbox_dispatcher_emits_duplicate_side_effect_anomaly_alert(
     assert persisted_outbox is not None
     assert persisted_outbox.status == OutboxStatus.ABORTED
     assert len(alert_events) == 1
+    assert len(attempts) == 1
+    assert attempts[0].status == ActionAttemptStatus.ABORTED
+    assert attempts[0].error_message == DISPATCHER_RECONCILIATION_ABORT_REASON
 
 
 def test_outbox_dispatcher_emits_backlog_growth_alert(

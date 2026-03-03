@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker
 
 from agent1.core.contracts import AgentEvent
+from agent1.core.contracts import ActionAttemptRecord
+from agent1.core.contracts import ActionAttemptStatus
 from agent1.core.contracts import EnvironmentName
 from agent1.core.contracts import EventSource
 from agent1.core.contracts import EventStatus
@@ -15,6 +17,8 @@ from agent1.core.contracts import EventType
 from agent1.core.contracts import JobKind
 from agent1.core.contracts import JobRecord
 from agent1.core.contracts import JobState
+from agent1.core.contracts import OutboxActionType
+from agent1.core.contracts import OutboxWriteRequest
 from agent1.core.contracts import RuntimeMode
 from agent1.core.services.dashboard_service import DashboardService
 from agent1.core.services.persistence_service import PersistenceService
@@ -183,6 +187,37 @@ def test_dashboard_service_returns_job_timeline(
             details={'reason': 'timeline_start'},
         )
     )
+    created_outbox = persistence_service.append_outbox_entry(
+        OutboxWriteRequest(
+            outbox_id='outbox_dashboard_timeline_1',
+            job_id='job_dashboard_timeline_1',
+            entity_key='Vaquum/Agent1#301',
+            environment=EnvironmentName.DEV,
+            action_type=OutboxActionType.ISSUE_COMMENT,
+            target_identity='Vaquum/Agent1#301:issue',
+            payload={
+                'repository': 'Vaquum/Agent1',
+                'issue_number': 301,
+                'body': 'timeline attempt',
+            },
+            idempotency_key='idem_outbox_dashboard_timeline_1',
+            job_lease_epoch=0,
+        ),
+    )
+    persistence_service.append_action_attempt(
+        ActionAttemptRecord(
+            attempt_id='outbox_dashboard_timeline_1:1',
+            outbox_id=created_outbox.outbox_id,
+            job_id='job_dashboard_timeline_1',
+            entity_key='Vaquum/Agent1#301',
+            environment=EnvironmentName.DEV,
+            action_type=OutboxActionType.ISSUE_COMMENT,
+            status=ActionAttemptStatus.SUCCEEDED,
+            error_message=None,
+            attempt_started_at=now,
+            attempt_completed_at=now + timedelta(seconds=1),
+        ),
+    )
 
     dashboard_service = DashboardService(session_factory=session_factory)
     timeline = dashboard_service.get_job_timeline(
@@ -195,8 +230,11 @@ def test_dashboard_service_returns_job_timeline(
     assert timeline.job.job_id == 'job_dashboard_timeline_1'
     assert timeline.transitions_page.total == 1
     assert timeline.events_page.total == 1
+    assert timeline.action_attempts_page.total == 1
     assert len(timeline.transitions) == 1
     assert len(timeline.events) == 1
+    assert len(timeline.action_attempts) == 1
+    assert timeline.action_attempts[0].status == ActionAttemptStatus.SUCCEEDED
 
 
 def test_dashboard_service_returns_none_for_missing_timeline_job(

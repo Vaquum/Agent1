@@ -28,7 +28,9 @@ This directory contains developer-facing documentation for architecture, workflo
   - `apps/backend/alembic/versions/20260304_000005_ingress_ordering_and_lease_fencing.py`
   - `apps/backend/alembic/versions/20260304_000006_watcher_states.py`
   - `apps/backend/alembic/versions/20260304_000007_entities.py`
+  - `apps/backend/alembic/versions/20260304_000008_action_attempts.py`
 - Entity durability baseline now includes `entities` as a first-class persisted table keyed by (`environment`, `entity_key`) with repository/type metadata.
+- Action attempt durability baseline now includes `action_attempts` linked to both `jobs` and `outbox_entries` for append-only side-effect attempt history.
 - Orchestration baseline is defined under:
   - `apps/backend/src/agent1/core/workflow.py`
   - `apps/backend/src/agent1/core/watcher.py`
@@ -111,6 +113,7 @@ This directory contains developer-facing documentation for architecture, workflo
   - retry-safe dispatch state machine with statuses `pending -> sent -> confirmed` and failure states `failed` / `aborted`,
   - mutating dispatch lease-epoch validation against persisted job lease ownership,
   - idempotency-scope reconciliation guard before retry dispatch,
+  - action-attempt lifecycle persistence in `action_attempts` with statuses `started` / `succeeded` / `failed` / `aborted` and deterministic error metadata,
   - duplicate side-effect anomaly alert signal emission on reconciliation abort.
 - Operational alert-signal runtime baseline is defined under:
   - `apps/backend/src/agent1/core/services/alert_signal_service.py`
@@ -192,5 +195,6 @@ This directory contains developer-facing documentation for architecture, workflo
   - filter controls for `entity_key`, `job_id`, `trace_id`, and `status`,
   - paginated overview navigation,
   - job timeline drill-down with dedicated timeline paging,
+  - action-attempt timeline query rendering (`started` / `succeeded` / `failed` / `aborted`) for each job timeline view,
   - timeline event inspection with rendered `details` payload and correlated transition view by event `details.reason`,
   - trace pivot action from selected timeline event back into overview filters.

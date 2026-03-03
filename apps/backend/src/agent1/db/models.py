@@ -16,6 +16,7 @@ from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
 
 from agent1.core.contracts import EnvironmentName
+from agent1.core.contracts import ActionAttemptStatus
 from agent1.core.contracts import EntityType
 from agent1.core.contracts import EventSource
 from agent1.core.contracts import EventStatus
@@ -265,6 +266,53 @@ class OutboxEntryModel(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now, nullable=False)
 
 
+class ActionAttemptModel(Base):
+    __tablename__ = 'action_attempts'
+    __table_args__ = (
+        UniqueConstraint(
+            'environment',
+            'attempt_id',
+            name='uq_action_attempts_environment_attempt_id',
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    attempt_id: Mapped[str] = mapped_column(String(MAX_ID_LENGTH), nullable=False, index=True)
+    outbox_id: Mapped[str] = mapped_column(
+        String(MAX_ID_LENGTH),
+        ForeignKey('outbox_entries.outbox_id'),
+        nullable=False,
+        index=True,
+    )
+    job_id: Mapped[str] = mapped_column(
+        String(MAX_ID_LENGTH),
+        ForeignKey('jobs.job_id'),
+        nullable=False,
+        index=True,
+    )
+    entity_key: Mapped[str] = mapped_column(String(MAX_ENTITY_KEY_LENGTH), nullable=False, index=True)
+    environment: Mapped[EnvironmentName] = mapped_column(
+        Enum(EnvironmentName, native_enum=False),
+        nullable=False,
+        index=True,
+    )
+    action_type: Mapped[OutboxActionType] = mapped_column(
+        Enum(OutboxActionType, native_enum=False),
+        nullable=False,
+        index=True,
+    )
+    status: Mapped[ActionAttemptStatus] = mapped_column(
+        Enum(ActionAttemptStatus, native_enum=False),
+        nullable=False,
+        index=True,
+    )
+    error_message: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    attempt_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    attempt_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now, nullable=False)
+
+
 class WatcherStateModel(Base):
     __tablename__ = 'watcher_states'
     __table_args__ = (
@@ -307,6 +355,7 @@ class WatcherStateModel(Base):
 
 
 __all__ = [
+    'ActionAttemptModel',
     'EntityModel',
     'EventJournalModel',
     'GitHubEventModel',

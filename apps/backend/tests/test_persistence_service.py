@@ -9,6 +9,8 @@ from sqlalchemy.orm import sessionmaker
 
 from agent1.core.services import persistence_service as persistence_service_module
 from agent1.core.contracts import AgentEvent
+from agent1.core.contracts import ActionAttemptRecord
+from agent1.core.contracts import ActionAttemptStatus
 from agent1.core.contracts import EntityRecord
 from agent1.core.contracts import EntityType
 from agent1.core.contracts import EnvironmentName
@@ -118,6 +120,75 @@ def test_persistence_service_entity_create_get_list_and_touch(
     assert len(listed_entities) == 1
     assert touched is True
     assert count == 1
+
+
+def test_persistence_service_action_attempt_methods(
+    session_factory: sessionmaker[Session],
+) -> None:
+    service = PersistenceService(session_factory=session_factory)
+    created_job = service.create_job(_create_record())
+    created_outbox = service.append_outbox_entry(
+        OutboxWriteRequest(
+            outbox_id='outbox_action_attempt_service_1',
+            job_id=created_job.job_id,
+            entity_key=created_job.entity_key,
+            environment=created_job.environment,
+            action_type=OutboxActionType.ISSUE_COMMENT,
+            target_identity='Vaquum/Agent1#2:issue',
+            payload={
+                'repository': 'Vaquum/Agent1',
+                'issue_number': 2,
+                'body': 'attempt lifecycle',
+            },
+            idempotency_key='outbox_action_attempt_service_idem_1',
+            job_lease_epoch=created_job.lease_epoch,
+        ),
+    )
+    appended_attempt = service.append_action_attempt(
+        ActionAttemptRecord(
+            attempt_id='outbox_action_attempt_service_1:1',
+            outbox_id=created_outbox.outbox_id,
+            job_id=created_job.job_id,
+            entity_key=created_job.entity_key,
+            environment=created_job.environment,
+            action_type=OutboxActionType.ISSUE_COMMENT,
+            status=ActionAttemptStatus.STARTED,
+            error_message=None,
+            attempt_started_at=datetime.now(timezone.utc),
+            attempt_completed_at=None,
+        ),
+    )
+    marked_failed = service.mark_action_attempt_status(
+        environment=created_job.environment,
+        attempt_id=appended_attempt.attempt_id,
+        status=ActionAttemptStatus.FAILED,
+        completion_timestamp=datetime.now(timezone.utc),
+        error_message='dispatch_failure',
+    )
+    fetched_attempt = service.get_action_attempt(
+        environment=created_job.environment,
+        attempt_id=appended_attempt.attempt_id,
+    )
+    listed_attempts = service.list_action_attempts_for_outbox(
+        outbox_id=created_outbox.outbox_id,
+        limit=10,
+    )
+    listed_job_attempts = service.list_action_attempts_for_job(
+        job_id=created_job.job_id,
+        limit=10,
+    )
+    counted_job_attempts = service.count_action_attempts_for_job(
+        job_id=created_job.job_id,
+    )
+
+    assert appended_attempt.status == ActionAttemptStatus.STARTED
+    assert marked_failed is True
+    assert fetched_attempt is not None
+    assert fetched_attempt.status == ActionAttemptStatus.FAILED
+    assert fetched_attempt.error_message == 'dispatch_failure'
+    assert len(listed_attempts) == 1
+    assert len(listed_job_attempts) == 1
+    assert counted_job_attempts == 1
 
 
 def test_persistence_service_append_event_emits_structured_log(

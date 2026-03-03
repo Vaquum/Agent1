@@ -16,3 +16,4 @@ def test_metadata_contains_core_tables() -> None:
     assert 'ingress_entity_cursors' in table_names
     assert 'watcher_states' in table_names
     assert 'entities' in table_names
+    assert 'action_attempts' in table_names
