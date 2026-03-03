@@ -4,6 +4,7 @@ from datetime import datetime
 from datetime import timezone
 
 from agent1.core.contracts import AgentEvent
+from agent1.core.contracts import CommentTargetRecord
 from agent1.core.contracts import EntityRecord
 from agent1.core.contracts import EntityType
 from agent1.core.contracts import EnvironmentName
@@ -12,6 +13,7 @@ from agent1.core.contracts import EventStatus
 from agent1.core.contracts import EventType
 from agent1.core.contracts import JobRecord
 from agent1.core.contracts import JobState
+from agent1.core.contracts import OutboxActionType
 from agent1.core.contracts import OutboxRecord
 from agent1.core.contracts import OutboxWriteRequest
 from agent1.core.ingress_contracts import GitHubIngressEvent
@@ -135,6 +137,226 @@ class JobOrchestrator:
         '''
 
         return self._persistence_service.get_job(job_id)
+
+    def append_comment_target(self, record: CommentTargetRecord) -> CommentTargetRecord:
+
+        '''
+        Create persisted comment-target row from resolved routing-target contract.
+
+        Args:
+        record (CommentTargetRecord): Typed comment-target contract to persist.
+
+        Returns:
+        CommentTargetRecord: Persisted typed comment-target contract.
+        '''
+
+        return self._persistence_service.append_comment_target(record)
+
+    def get_outbox_entry_by_outbox_id(self, outbox_id: str) -> OutboxRecord | None:
+
+        '''
+        Create outbox lookup result by durable outbox identifier.
+
+        Args:
+        outbox_id (str): Durable outbox identifier.
+
+        Returns:
+        OutboxRecord | None: Typed outbox contract or None when missing.
+        '''
+
+        return self._persistence_service.get_outbox_entry_by_outbox_id(outbox_id)
+
+    def get_outbox_entry_by_idempotency_scope(
+        self,
+        environment: EnvironmentName,
+        action_type: OutboxActionType,
+        target_identity: str,
+        idempotency_key: str,
+    ) -> OutboxRecord | None:
+
+        '''
+        Create outbox lookup result by deterministic idempotency scope.
+
+        Args:
+        environment (EnvironmentName): Runtime environment value.
+        action_type (OutboxActionType): Outbox side-effect action type.
+        target_identity (str): Deterministic target identity.
+        idempotency_key (str): Deterministic idempotency key.
+
+        Returns:
+        OutboxRecord | None: Typed outbox contract or None when missing.
+        '''
+
+        return self._persistence_service.get_outbox_entry_by_idempotency_scope(
+            environment=environment,
+            action_type=action_type,
+            target_identity=target_identity,
+            idempotency_key=idempotency_key,
+        )
+
+    def get_comment_target_by_outbox_id(
+        self,
+        environment: EnvironmentName,
+        outbox_id: str,
+    ) -> CommentTargetRecord | None:
+
+        '''
+        Create comment-target lookup result by environment and outbox identifier.
+
+        Args:
+        environment (EnvironmentName): Runtime environment value.
+        outbox_id (str): Durable outbox identifier.
+
+        Returns:
+        CommentTargetRecord | None: Typed comment-target contract or None when missing.
+        '''
+
+        return self._persistence_service.get_comment_target_by_outbox_id(
+            environment=environment,
+            outbox_id=outbox_id,
+        )
+
+    def get_comment_target_by_idempotency_scope(
+        self,
+        environment: EnvironmentName,
+        action_type: OutboxActionType,
+        target_identity: str,
+        idempotency_key: str,
+    ) -> CommentTargetRecord | None:
+
+        '''
+        Create comment-target lookup result by deterministic idempotency scope.
+
+        Args:
+        environment (EnvironmentName): Runtime environment value.
+        action_type (OutboxActionType): Outbox side-effect action type.
+        target_identity (str): Deterministic target identity.
+        idempotency_key (str): Deterministic idempotency key.
+
+        Returns:
+        CommentTargetRecord | None: Typed comment-target contract or None when missing.
+        '''
+
+        return self._persistence_service.get_comment_target_by_idempotency_scope(
+            environment=environment,
+            action_type=action_type,
+            target_identity=target_identity,
+            idempotency_key=idempotency_key,
+        )
+
+    def list_comment_targets_for_job(
+        self,
+        job_id: str,
+        limit: int,
+        offset: int = 0,
+    ) -> list[CommentTargetRecord]:
+
+        '''
+        Create comment-target list for one job identifier.
+
+        Args:
+        job_id (str): Durable job identifier.
+        limit (int): Maximum row count to return.
+        offset (int): Pagination offset.
+
+        Returns:
+        list[CommentTargetRecord]: Ordered typed comment-target rows.
+        '''
+
+        return self._persistence_service.list_comment_targets_for_job(
+            job_id=job_id,
+            limit=limit,
+            offset=offset,
+        )
+
+    def count_comment_targets_for_job(self, job_id: str) -> int:
+
+        '''
+        Create comment-target count for one job identifier.
+
+        Args:
+        job_id (str): Durable job identifier.
+
+        Returns:
+        int: Comment-target row count for the provided job.
+        '''
+
+        return self._persistence_service.count_comment_targets_for_job(job_id=job_id)
+
+    def append_outbox_entry(self, request: OutboxWriteRequest) -> OutboxRecord:
+
+        '''
+        Create persisted outbox intent row from typed outbox write request.
+
+        Args:
+        request (OutboxWriteRequest): Typed outbox intent write request.
+
+        Returns:
+        OutboxRecord: Persisted typed outbox row.
+        '''
+
+        return self._persistence_service.append_outbox_entry(request)
+
+    def mark_outbox_entry_sent(self, outbox_id: str, expected_lease_epoch: int) -> bool:
+
+        '''
+        Compute sent-status update outcome for one outbox entry attempt.
+
+        Args:
+        outbox_id (str): Durable outbox identifier.
+        expected_lease_epoch (int): Expected lease epoch fencing value.
+
+        Returns:
+        bool: True when update succeeded, otherwise False.
+        '''
+
+        return self._persistence_service.mark_outbox_entry_sent(
+            outbox_id=outbox_id,
+            expected_lease_epoch=expected_lease_epoch,
+        )
+
+    def mark_outbox_entry_confirmed(self, outbox_id: str, expected_lease_epoch: int) -> bool:
+
+        '''
+        Compute confirmed-status update outcome for one outbox entry.
+
+        Args:
+        outbox_id (str): Durable outbox identifier.
+        expected_lease_epoch (int): Expected lease epoch fencing value.
+
+        Returns:
+        bool: True when update succeeded, otherwise False.
+        '''
+
+        return self._persistence_service.mark_outbox_entry_confirmed(
+            outbox_id=outbox_id,
+            expected_lease_epoch=expected_lease_epoch,
+        )
+
+    def mark_outbox_entry_aborted(
+        self,
+        outbox_id: str,
+        expected_lease_epoch: int,
+        abort_reason: str,
+    ) -> bool:
+
+        '''
+        Compute aborted-status update outcome for unrecoverable outbox entries.
+
+        Args:
+        outbox_id (str): Durable outbox identifier.
+        expected_lease_epoch (int): Expected lease epoch fencing value.
+        abort_reason (str): Deterministic abort summary.
+
+        Returns:
+        bool: True when update succeeded, otherwise False.
+        '''
+
+        return self._persistence_service.mark_outbox_entry_aborted(
+            outbox_id=outbox_id,
+            expected_lease_epoch=expected_lease_epoch,
+            abort_reason=abort_reason,
+        )
 
     def claim_job(self, job_id: str, trace_id: str) -> bool:
 

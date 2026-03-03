@@ -11,6 +11,8 @@ from agent1.core.services import persistence_service as persistence_service_modu
 from agent1.core.contracts import AgentEvent
 from agent1.core.contracts import ActionAttemptRecord
 from agent1.core.contracts import ActionAttemptStatus
+from agent1.core.contracts import CommentTargetRecord
+from agent1.core.contracts import CommentTargetType
 from agent1.core.contracts import EntityRecord
 from agent1.core.contracts import EntityType
 from agent1.core.contracts import EnvironmentName
@@ -32,6 +34,7 @@ from agent1.core.services.persistence_service import PersistenceService
 from agent1.db.models import EventJournalModel
 from agent1.db.models import GitHubEventModel
 from agent1.db.models import OutboxEntryModel
+from agent1.db.models import CommentTargetModel
 
 
 def _create_record() -> JobRecord:
@@ -189,6 +192,80 @@ def test_persistence_service_action_attempt_methods(
     assert len(listed_attempts) == 1
     assert len(listed_job_attempts) == 1
     assert counted_job_attempts == 1
+
+
+def test_persistence_service_append_comment_target(
+    session_factory: sessionmaker[Session],
+) -> None:
+    service = PersistenceService(session_factory=session_factory)
+    created_job = service.create_job(_create_record())
+    created_outbox = service.append_outbox_entry(
+        OutboxWriteRequest(
+            outbox_id='outbox_comment_target_service_1',
+            job_id=created_job.job_id,
+            entity_key=created_job.entity_key,
+            environment=created_job.environment,
+            action_type=OutboxActionType.PR_REVIEW_REPLY,
+            target_identity='Vaquum/Agent1:pr:2:thread:PRRC_1:9001',
+            payload={
+                'repository': 'Vaquum/Agent1',
+                'pull_number': 2,
+                'review_comment_id': 9001,
+                'body': 'comment target persistence',
+            },
+            idempotency_key='outbox_comment_target_service_idem_1',
+            job_lease_epoch=created_job.lease_epoch,
+        ),
+    )
+    appended_comment_target = service.append_comment_target(
+        CommentTargetRecord(
+            target_id='outbox_comment_target_service_1',
+            outbox_id=created_outbox.outbox_id,
+            job_id=created_job.job_id,
+            entity_key=created_job.entity_key,
+            environment=created_job.environment,
+            target_type=CommentTargetType.PR_REVIEW_THREAD,
+            target_identity='Vaquum/Agent1:pr:2:thread:PRRC_1:9001',
+            issue_number=None,
+            pr_number=2,
+            thread_id='PRRC_1',
+            review_comment_id=9001,
+            path='apps/backend/src/agent1/main.py',
+            line=44,
+            side='RIGHT',
+            resolved_at=datetime.now(timezone.utc),
+        ),
+    )
+    fetched_by_outbox = service.get_comment_target_by_outbox_id(
+        environment=created_job.environment,
+        outbox_id=created_outbox.outbox_id,
+    )
+    fetched_by_idempotency_scope = service.get_comment_target_by_idempotency_scope(
+        environment=created_job.environment,
+        action_type=OutboxActionType.PR_REVIEW_REPLY,
+        target_identity='Vaquum/Agent1:pr:2:thread:PRRC_1:9001',
+        idempotency_key='outbox_comment_target_service_idem_1',
+    )
+    listed_for_job = service.list_comment_targets_for_job(
+        job_id=created_job.job_id,
+        limit=10,
+    )
+    count_for_job = service.count_comment_targets_for_job(job_id=created_job.job_id)
+
+    with session_factory() as verification_session:
+        persisted_comment_target = (
+            verification_session.query(CommentTargetModel)
+            .filter(CommentTargetModel.target_id == appended_comment_target.target_id)
+            .one_or_none()
+        )
+
+    assert persisted_comment_target is not None
+    assert persisted_comment_target.review_comment_id == 9001
+    assert appended_comment_target.target_type == CommentTargetType.PR_REVIEW_THREAD
+    assert fetched_by_outbox is not None
+    assert fetched_by_idempotency_scope is not None
+    assert len(listed_for_job) == 1
+    assert count_for_job == 1
 
 
 def test_persistence_service_append_event_emits_structured_log(

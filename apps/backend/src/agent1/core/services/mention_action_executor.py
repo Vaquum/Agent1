@@ -1,15 +1,24 @@
 from __future__ import annotations
 
+from datetime import datetime
+from datetime import timezone
+import hashlib
 from typing import Protocol
 
 from agent1.adapters.github.client import GitHubApiClient
 from agent1.adapters.github.client import UrlLibGitHubApiClient
+from agent1.core.contracts import CommentTarget
+from agent1.core.contracts import CommentTargetRecord
 from agent1.core.contracts import CommentTargetType
 from agent1.core.contracts import ExecutionResult
 from agent1.core.contracts import ExecutionStatus
 from agent1.core.contracts import JobKind
 from agent1.core.contracts import JobRecord
 from agent1.core.contracts import JobState
+from agent1.core.contracts import OutboxActionType
+from agent1.core.contracts import OutboxRecord
+from agent1.core.contracts import OutboxStatus
+from agent1.core.contracts import OutboxWriteRequest
 from agent1.core.contracts import RuntimeMode
 from agent1.core.ingress_contracts import IngressEventType
 from agent1.core.ingress_contracts import NormalizedIngressEvent
@@ -37,6 +46,11 @@ NO_WRITE_CLARIFICATION_REASON = 'no_write_clarification_observed'
 NO_WRITE_EXECUTION_START_REASON = 'no_write_execution_started'
 NO_WRITE_FEEDBACK_REASON = 'no_write_feedback_observed'
 NO_WRITE_CI_REASON = 'no_write_ci_observed'
+COMMENT_TARGET_OUTBOX_ABORT_REASON = 'comment_target_delivery_failed'
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 def _is_supported_comment_event(normalized_event: NormalizedIngressEvent) -> bool:
@@ -216,6 +230,226 @@ class MentionActionExecutor:
             return current_job, lease_valid
 
         return latest_job, lease_valid
+
+    def _create_comment_target_identity(
+        self,
+        normalized_event: NormalizedIngressEvent,
+        comment_target: CommentTarget,
+    ) -> str:
+        if comment_target.target_type == CommentTargetType.PR_REVIEW_THREAD:
+            thread_id = str(comment_target.thread_id or '')
+            review_comment_id = int(comment_target.review_comment_id or 0)
+            return (
+                f"{normalized_event.repository}:"
+                f"pr:{normalized_event.entity_number}:"
+                f"thread:{thread_id}:{review_comment_id}"
+            )
+
+        if comment_target.target_type == CommentTargetType.PR:
+            return f"{normalized_event.repository}:pr:{normalized_event.entity_number}"
+
+        return f"{normalized_event.repository}:issue:{normalized_event.entity_number}"
+
+    def _create_comment_target_outbox_id(
+        self,
+        normalized_event: NormalizedIngressEvent,
+        action_type: OutboxActionType,
+        target_identity: str,
+    ) -> str:
+        target_hash = hashlib.sha1(target_identity.encode('utf-8')).hexdigest()[:12]
+        return f"outbox_route:{normalized_event.event_id}:{action_type.value}:{target_hash}"
+
+    def _build_comment_target_record(
+        self,
+        outbox_id: str,
+        current_job: JobRecord,
+        comment_target: CommentTarget,
+        target_identity: str,
+    ) -> CommentTargetRecord:
+        return CommentTargetRecord(
+            target_id=outbox_id,
+            outbox_id=outbox_id,
+            job_id=current_job.job_id,
+            entity_key=current_job.entity_key,
+            environment=current_job.environment,
+            target_type=comment_target.target_type,
+            target_identity=target_identity,
+            issue_number=comment_target.issue_number,
+            pr_number=comment_target.pr_number,
+            thread_id=comment_target.thread_id,
+            review_comment_id=comment_target.review_comment_id,
+            path=comment_target.path,
+            line=comment_target.line,
+            side=comment_target.side,
+            resolved_at=_utc_now(),
+        )
+
+    def _build_comment_target_intent(
+        self,
+        normalized_event: NormalizedIngressEvent,
+        comment_target: CommentTarget,
+        comment_body: str,
+    ) -> tuple[OutboxActionType, str, dict[str, object]]:
+        target_identity = self._create_comment_target_identity(normalized_event, comment_target)
+
+        if comment_target.target_type == CommentTargetType.PR_REVIEW_THREAD:
+            if comment_target.review_comment_id is None:
+                raise ValueError('Missing review comment id for thread reply.')
+
+            return (
+                OutboxActionType.PR_REVIEW_REPLY,
+                target_identity,
+                {
+                    'repository': normalized_event.repository,
+                    'pull_number': normalized_event.entity_number,
+                    'review_comment_id': comment_target.review_comment_id,
+                    'body': comment_body,
+                },
+            )
+
+        return (
+            OutboxActionType.ISSUE_COMMENT,
+            target_identity,
+            {
+                'repository': normalized_event.repository,
+                'issue_number': normalized_event.entity_number,
+                'body': comment_body,
+            },
+        )
+
+    def _persist_comment_target_intent(
+        self,
+        normalized_event: NormalizedIngressEvent,
+        current_job: JobRecord,
+        comment_target: CommentTarget,
+        comment_body: str,
+        orchestrator: JobOrchestrator,
+    ) -> tuple[OutboxRecord, OutboxActionType]:
+        action_type, target_identity, payload = self._build_comment_target_intent(
+            normalized_event=normalized_event,
+            comment_target=comment_target,
+            comment_body=comment_body,
+        )
+        idempotency_key = f"{normalized_event.idempotency_key}:comment_target"
+        existing_outbox = orchestrator.get_outbox_entry_by_idempotency_scope(
+            environment=current_job.environment,
+            action_type=action_type,
+            target_identity=target_identity,
+            idempotency_key=idempotency_key,
+        )
+        if existing_outbox is not None:
+            existing_comment_target = orchestrator.get_comment_target_by_outbox_id(
+                environment=current_job.environment,
+                outbox_id=existing_outbox.outbox_id,
+            )
+            if existing_comment_target is None:
+                orchestrator.append_comment_target(
+                    self._build_comment_target_record(
+                        outbox_id=existing_outbox.outbox_id,
+                        current_job=current_job,
+                        comment_target=comment_target,
+                        target_identity=target_identity,
+                    ),
+                )
+            return existing_outbox, action_type
+
+        outbox_id = self._create_comment_target_outbox_id(
+            normalized_event=normalized_event,
+            action_type=action_type,
+            target_identity=target_identity,
+        )
+
+        outbox_record = orchestrator.append_outbox_entry(
+            OutboxWriteRequest(
+                outbox_id=outbox_id,
+                job_id=current_job.job_id,
+                entity_key=current_job.entity_key,
+                environment=current_job.environment,
+                action_type=action_type,
+                target_identity=target_identity,
+                payload=payload,
+                idempotency_key=idempotency_key,
+                job_lease_epoch=current_job.lease_epoch,
+            ),
+        )
+        orchestrator.append_comment_target(
+            self._build_comment_target_record(
+                outbox_id=outbox_record.outbox_id,
+                current_job=current_job,
+                comment_target=comment_target,
+                target_identity=target_identity,
+            ),
+        )
+        return outbox_record, action_type
+
+    def _dispatch_comment_target(
+        self,
+        normalized_event: NormalizedIngressEvent,
+        comment_target: CommentTarget,
+        comment_body: str,
+    ) -> None:
+        if comment_target.target_type == CommentTargetType.PR_REVIEW_THREAD:
+            if comment_target.review_comment_id is None:
+                raise ValueError('Missing review comment id for thread reply.')
+
+            self._github_client.post_pull_review_comment_reply(
+                repository=normalized_event.repository,
+                pull_number=normalized_event.entity_number,
+                review_comment_id=comment_target.review_comment_id,
+                body=comment_body,
+            )
+            return
+
+        self._github_client.post_issue_comment(
+            repository=normalized_event.repository,
+            issue_number=normalized_event.entity_number,
+            body=comment_body,
+        )
+
+    def _deliver_comment_target(
+        self,
+        normalized_event: NormalizedIngressEvent,
+        current_job: JobRecord,
+        comment_target: CommentTarget,
+        comment_body: str,
+        orchestrator: JobOrchestrator,
+    ) -> bool:
+        outbox_record, _ = self._persist_comment_target_intent(
+            normalized_event=normalized_event,
+            current_job=current_job,
+            comment_target=comment_target,
+            comment_body=comment_body,
+            orchestrator=orchestrator,
+        )
+        if outbox_record.status == OutboxStatus.CONFIRMED:
+            return True
+
+        sent = orchestrator.mark_outbox_entry_sent(
+            outbox_id=outbox_record.outbox_id,
+            expected_lease_epoch=outbox_record.lease_epoch,
+        )
+        if sent is False:
+            return False
+
+        sent_lease_epoch = outbox_record.lease_epoch + 1
+        try:
+            self._dispatch_comment_target(
+                normalized_event=normalized_event,
+                comment_target=comment_target,
+                comment_body=comment_body,
+            )
+        except Exception:
+            orchestrator.mark_outbox_entry_aborted(
+                outbox_id=outbox_record.outbox_id,
+                expected_lease_epoch=sent_lease_epoch,
+                abort_reason=COMMENT_TARGET_OUTBOX_ABORT_REASON,
+            )
+            return False
+
+        return orchestrator.mark_outbox_entry_confirmed(
+            outbox_id=outbox_record.outbox_id,
+            expected_lease_epoch=sent_lease_epoch,
+        )
 
     def _execute_no_write_event(
         self,
@@ -404,23 +638,14 @@ class MentionActionExecutor:
                         trace_id=normalized_event.trace_id,
                     )
 
-                try:
-                    if comment_target.target_type == CommentTargetType.PR_REVIEW_THREAD:
-                        if comment_target.review_comment_id is None:
-                            raise ValueError('Missing review comment id for thread reply.')
-                        self._github_client.post_pull_review_comment_reply(
-                            repository=normalized_event.repository,
-                            pull_number=normalized_event.entity_number,
-                            review_comment_id=comment_target.review_comment_id,
-                            body=author_comment_body,
-                        )
-                    else:
-                        self._github_client.post_issue_comment(
-                            repository=normalized_event.repository,
-                            issue_number=normalized_event.entity_number,
-                            body=author_comment_body,
-                        )
-                except Exception:
+                delivered = self._deliver_comment_target(
+                    normalized_event=normalized_event,
+                    current_job=current_job,
+                    comment_target=comment_target,
+                    comment_body=author_comment_body,
+                    orchestrator=orchestrator,
+                )
+                if delivered is False:
                     return orchestrator.transition_job(
                         current_job.job_id,
                         to_state=JobState.BLOCKED,
@@ -522,23 +747,14 @@ class MentionActionExecutor:
                 return current_job
 
             comment_body = self._render_comment_body(normalized_event)
-            try:
-                if comment_target.target_type == CommentTargetType.PR_REVIEW_THREAD:
-                    if comment_target.review_comment_id is None:
-                        raise ValueError('Missing review comment id for thread reply.')
-                    self._github_client.post_pull_review_comment_reply(
-                        repository=normalized_event.repository,
-                        pull_number=normalized_event.entity_number,
-                        review_comment_id=comment_target.review_comment_id,
-                        body=comment_body,
-                    )
-                else:
-                    self._github_client.post_issue_comment(
-                        repository=normalized_event.repository,
-                        issue_number=normalized_event.entity_number,
-                        body=comment_body,
-                    )
-            except Exception:
+            delivered = self._deliver_comment_target(
+                normalized_event=normalized_event,
+                current_job=current_job,
+                comment_target=comment_target,
+                comment_body=comment_body,
+                orchestrator=orchestrator,
+            )
+            if delivered is False:
                 return orchestrator.transition_job(
                     current_job.job_id,
                     to_state=JobState.BLOCKED,

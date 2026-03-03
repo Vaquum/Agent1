@@ -14,6 +14,7 @@ Current operations dashboard capability:
 - Mutating GitHub side effects enforce lease-epoch validation to reject stale-owner writes before dispatch.
 - Side-effect attempt lifecycle is persisted in `action_attempts` with `started`, `succeeded`, `failed`, and `aborted` statuses linked to job/outbox scope.
 - Deterministic comment routing targets are now durably scaffolded in `comment_targets` with job/outbox linkage.
+- Comment-target replay and idempotency lookups are available via outbox-scope and idempotency-scope persistence APIs.
 - Watcher runtime state is persisted durably with stale-watcher reclaim, checkpoint restoration, and explicit operator-required escalation for stuck watchers.
 - Runtime alert signals are emitted for lease violations, duplicate side-effect anomalies, comment-routing failures, outbox backlog growth, and elevated failed transition rates.
 - Critical alert payloads always include `trace_id`, `job_id`, and runbook linkage.

@@ -12,14 +12,18 @@ from agent1.core.contracts import ExecutionStatus
 from agent1.core.contracts import JobKind
 from agent1.core.contracts import JobRecord
 from agent1.core.contracts import JobState
+from agent1.core.contracts import OutboxStatus
 from agent1.core.contracts import RuntimeMode
+from agent1.core.contracts import CommentTargetType
 from agent1.core.ingress_contracts import NormalizedIngressEvent
 from agent1.core.orchestrator import JobOrchestrator
 from agent1.core.services.alert_signal_service import COMMENT_ROUTING_FAILURES_ALERT
 from agent1.core.services.alert_signal_service import LEASE_VIOLATIONS_ALERT
 from agent1.core.services.mention_action_executor import MentionActionExecutor
 from agent1.core.services.persistence_service import PersistenceService
+from agent1.db.models import CommentTargetModel
 from agent1.db.models import EventJournalModel
+from agent1.db.models import OutboxEntryModel
 
 
 def _create_record(job_id: str) -> JobRecord:
@@ -251,10 +255,17 @@ def test_mention_action_executor_posts_comment_and_advances_state(
         current_job=created,
         orchestrator=orchestrator,
     )
+    with session_factory() as verification_session:
+        comment_targets = verification_session.query(CommentTargetModel).all()
+        outbox_entries = verification_session.query(OutboxEntryModel).all()
 
     assert len(fake_client.comment_calls) == 1
     assert fake_client.comment_calls[0]['body'] == 'Ack Vaquum/Agent1#25'
     assert updated.state == JobState.AWAITING_HUMAN_FEEDBACK
+    assert len(comment_targets) == 1
+    assert comment_targets[0].target_type == CommentTargetType.ISSUE
+    assert len(outbox_entries) == 1
+    assert outbox_entries[0].status == OutboxStatus.CONFIRMED
 
 
 def test_mention_action_executor_handles_issue_updated_resume_event(
@@ -659,10 +670,15 @@ def test_mention_action_executor_routes_review_thread_reply(
         current_job=created,
         orchestrator=orchestrator,
     )
+    with session_factory() as verification_session:
+        comment_targets = verification_session.query(CommentTargetModel).all()
 
     assert len(fake_client.thread_reply_calls) == 1
     assert len(fake_client.comment_calls) == 0
     assert updated.state == JobState.AWAITING_HUMAN_FEEDBACK
+    assert len(comment_targets) == 1
+    assert comment_targets[0].target_type == CommentTargetType.PR_REVIEW_THREAD
+    assert comment_targets[0].review_comment_id == 4401
 
 
 def test_mention_action_executor_blocks_on_missing_review_thread_metadata(

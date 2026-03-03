@@ -15,8 +15,8 @@ Tracking list of remaining items against `spec.md` acceptance criteria.
 - [ ] P3: `audit_runs` slice 2 - implement repository/service append + list APIs.
 - [ ] P3: `audit_runs` slice 3 - wire audit execution flow and add tests + docs.
 - [x] P1: `comment_targets` slice 1 - add contracts/model + migration for deterministic routing targets.
-- [ ] P1: `comment_targets` slice 2 - persist resolved targets from comment routing path.
-- [ ] P1: `comment_targets` slice 3 - add replay/idempotency lookup APIs and tests + docs.
+- [x] P1: `comment_targets` slice 2 - persist resolved targets from comment routing path.
+- [x] P1: `comment_targets` slice 3 - add replay/idempotency lookup APIs and tests + docs.
 - [ ] P1: Idempotency schema slice 1 - add canonical key builder (`entity_key`, `action_type`, `target_identity`).
 - [ ] P1: Idempotency schema slice 2 - add normalized payload hash + policy version hash components.
 - [ ] P1: Idempotency schema slice 3 - enforce schema in outbox write/reconcile paths with migration + tests.

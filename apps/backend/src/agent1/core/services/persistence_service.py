@@ -8,6 +8,7 @@ from sqlalchemy.orm import sessionmaker
 from agent1.core.contracts import AgentEvent
 from agent1.core.contracts import ActionAttemptRecord
 from agent1.core.contracts import ActionAttemptStatus
+from agent1.core.contracts import CommentTargetRecord
 from agent1.core.contracts import EntityRecord
 from agent1.core.contracts import EntityType
 from agent1.core.contracts import EnvironmentName
@@ -22,11 +23,13 @@ from agent1.core.ingress_contracts import PersistedIngressEvent
 from agent1.core.watcher import WatcherState
 from agent1.core.services.structured_event_logger import log_agent_event
 from agent1.db.models import ActionAttemptModel
+from agent1.db.models import CommentTargetModel
 from agent1.db.models import JobModel
 from agent1.db.models import EntityModel
 from agent1.db.models import OutboxEntryModel
 from agent1.db.models import WatcherStateModel
 from agent1.db.repositories.action_attempt_repository import ActionAttemptRepository
+from agent1.db.repositories.comment_target_repository import CommentTargetRepository
 from agent1.db.repositories.entity_repository import EntityRepository
 from agent1.db.repositories.event_repository import EventRepository
 from agent1.db.repositories.github_event_repository import GitHubEventRepository
@@ -107,6 +110,37 @@ def _to_action_attempt_record(model: ActionAttemptModel) -> ActionAttemptRecord:
         error_message=model.error_message,
         attempt_started_at=model.attempt_started_at,
         attempt_completed_at=model.attempt_completed_at,
+    )
+
+
+def _to_comment_target_record(model: CommentTargetModel) -> CommentTargetRecord:
+
+    '''
+    Create typed comment-target contract from persisted comment-target model.
+
+    Args:
+    model (CommentTargetModel): Persisted comment-target model row.
+
+    Returns:
+    CommentTargetRecord: Typed comment-target contract.
+    '''
+
+    return CommentTargetRecord(
+        target_id=model.target_id,
+        outbox_id=model.outbox_id,
+        job_id=model.job_id,
+        entity_key=model.entity_key,
+        environment=model.environment,
+        target_type=model.target_type,
+        target_identity=model.target_identity,
+        issue_number=model.issue_number,
+        pr_number=model.pr_number,
+        thread_id=model.thread_id,
+        review_comment_id=model.review_comment_id,
+        path=model.path,
+        line=model.line,
+        side=model.side,
+        resolved_at=model.resolved_at,
     )
 
 
@@ -318,6 +352,130 @@ class PersistenceService:
             )
             session.commit()
             return touched
+
+    def append_comment_target(self, record: CommentTargetRecord) -> CommentTargetRecord:
+
+        '''
+        Create persisted comment-target row from resolved routing-target contract.
+
+        Args:
+        record (CommentTargetRecord): Typed comment-target contract to persist.
+
+        Returns:
+        CommentTargetRecord: Persisted typed comment-target contract.
+        '''
+
+        with self._session_factory() as session:
+            repository = CommentTargetRepository(session)
+            model = repository.create_comment_target(record)
+            session.commit()
+            return _to_comment_target_record(model)
+
+    def get_comment_target_by_outbox_id(
+        self,
+        environment: EnvironmentName,
+        outbox_id: str,
+    ) -> CommentTargetRecord | None:
+
+        '''
+        Create comment-target lookup result by environment and outbox identifier.
+
+        Args:
+        environment (EnvironmentName): Runtime environment value.
+        outbox_id (str): Durable outbox identifier.
+
+        Returns:
+        CommentTargetRecord | None: Typed comment-target contract or None when missing.
+        '''
+
+        with self._session_factory() as session:
+            repository = CommentTargetRepository(session)
+            model = repository.get_comment_target_by_outbox_id(
+                environment=environment,
+                outbox_id=outbox_id,
+            )
+            if model is None:
+                return None
+
+            return _to_comment_target_record(model)
+
+    def get_comment_target_by_idempotency_scope(
+        self,
+        environment: EnvironmentName,
+        action_type: OutboxActionType,
+        target_identity: str,
+        idempotency_key: str,
+    ) -> CommentTargetRecord | None:
+
+        '''
+        Create comment-target lookup result by deterministic idempotency scope.
+
+        Args:
+        environment (EnvironmentName): Runtime environment value.
+        action_type (OutboxActionType): Outbox side-effect action type.
+        target_identity (str): Deterministic target identity.
+        idempotency_key (str): Deterministic idempotency key.
+
+        Returns:
+        CommentTargetRecord | None: Typed comment-target contract or None when missing.
+        '''
+
+        with self._session_factory() as session:
+            repository = CommentTargetRepository(session)
+            model = repository.get_comment_target_by_idempotency_scope(
+                environment=environment,
+                action_type=action_type,
+                target_identity=target_identity,
+                idempotency_key=idempotency_key,
+            )
+            if model is None:
+                return None
+
+            return _to_comment_target_record(model)
+
+    def list_comment_targets_for_job(
+        self,
+        job_id: str,
+        limit: int,
+        offset: int = 0,
+    ) -> list[CommentTargetRecord]:
+
+        '''
+        Create comment-target list for one job identifier.
+
+        Args:
+        job_id (str): Durable job identifier.
+        limit (int): Maximum row count to return.
+        offset (int): Pagination offset.
+
+        Returns:
+        list[CommentTargetRecord]: Ordered typed comment-target rows.
+        '''
+
+        with self._session_factory() as session:
+            repository = CommentTargetRepository(session)
+            models = repository.list_comment_targets_for_job(
+                job_id=job_id,
+                limit=limit,
+                offset=offset,
+            )
+            return [_to_comment_target_record(model) for model in models]
+
+    def count_comment_targets_for_job(self, job_id: str) -> int:
+
+        '''
+        Create comment-target count for one job identifier.
+
+        Args:
+        job_id (str): Durable job identifier.
+
+        Returns:
+        int: Comment-target row count for the provided job.
+        '''
+
+        with self._session_factory() as session:
+            repository = CommentTargetRepository(session)
+            return repository.count_comment_targets_for_job(job_id=job_id)
 
     def append_action_attempt(self, record: ActionAttemptRecord) -> ActionAttemptRecord:
 

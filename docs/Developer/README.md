@@ -32,7 +32,7 @@ This directory contains developer-facing documentation for architecture, workflo
   - `apps/backend/alembic/versions/20260304_000009_comment_targets.py`
 - Entity durability baseline now includes `entities` as a first-class persisted table keyed by (`environment`, `entity_key`) with repository/type metadata.
 - Action attempt durability baseline now includes `action_attempts` linked to both `jobs` and `outbox_entries` for append-only side-effect attempt history.
-- Comment-target durability baseline now includes `comment_targets` for deterministic routing target persistence linked to both `jobs` and `outbox_entries`.
+- Comment-target durability baseline now includes `comment_targets` for deterministic routing target persistence linked to both `jobs` and `outbox_entries`, plus replay/idempotency lookup APIs by outbox and idempotency scope.
 - Orchestration baseline is defined under:
   - `apps/backend/src/agent1/core/workflow.py`
   - `apps/backend/src/agent1/core/watcher.py`
@@ -88,6 +88,7 @@ This directory contains developer-facing documentation for architecture, workflo
   - zero-write handling in non-active runtime modes, with deterministic no-write state transitions,
   - top-level comment response posting through GitHub API adapter,
   - PR review-thread reply routing through comment target metadata (`thread_id`, `review_comment_id`, `path`, `line`, `side`),
+  - persisted routing target records in `comment_targets` for routed side effects with deterministic outbox linkage,
   - strict block behavior when review-thread metadata is missing and top-level fallback is disabled,
   - deterministic clarification transition `awaiting_context -> blocked` after clarification request delivery,
   - deterministic resume transition `blocked -> ready_to_execute -> awaiting_human_feedback` on sufficient context updates,
