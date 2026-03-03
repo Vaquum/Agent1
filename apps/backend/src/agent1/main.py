@@ -99,7 +99,7 @@ def create_application() -> FastAPI:
     control_bundle = validate_control_bundle()
     settings = get_settings()
     sentry_enabled = initialize_sentry()
-    codex_executor = CodexExecutor()
+    codex_executor = CodexExecutor(policies=control_bundle.policies)
     mention_response_template = control_bundle.prompts.templates['mention_response'].task_prompt
     clarification_template = control_bundle.prompts.templates['issue_clarification'].task_prompt
     reviewer_follow_up_template = control_bundle.prompts.templates['reviewer_follow_up'].task_prompt

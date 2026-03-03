@@ -7,3 +7,4 @@ Operational runbooks for deployment, rollback, migration, and incident response.
 - `lease-and-idempotency-incidents.md`: response to lease and duplicate side-effect incidents.
 - `review-thread-routing-failures.md`: response to review-thread routing failures.
 - `github-rate-limit-and-token-failures.md`: response to token and API quota failures.
+- `git-mutation-policy-denials.md`: response to codex-runtime git command policy denials.

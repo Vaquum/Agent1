@@ -44,10 +44,10 @@ Tracking list of remaining items against `spec.md` acceptance criteria.
 - [ ] P3: Protected approval slice 1 - define approval artifact/schema for policy and guardrail mutations.
 - [ ] P3: Protected approval slice 2 - enforce approval checks in policy/guardrail update path.
 - [ ] P3: Protected approval slice 3 - persist approval audit trail and add tests + docs.
-- [ ] P1: Git allowlist slice 1 - define allowed git mutation commands in execution policy.
-- [ ] P1: Git allowlist slice 2 - enforce allowlist in codex runtime execution path.
-- [ ] P1: Git allowlist slice 3 - add deny-path tests and runbook guidance.
-- [ ] P1: Branch namespace slice 1 - define allowed mutation branch patterns per environment.
+- [x] P1: Git allowlist slice 1 - define allowed git mutation commands in execution policy.
+- [x] P1: Git allowlist slice 2 - enforce allowlist in codex runtime execution path.
+- [x] P1: Git allowlist slice 3 - add deny-path tests and runbook guidance.
+- [x] P1: Branch namespace slice 1 - define allowed mutation branch patterns per environment.
 - [ ] P1: Branch namespace slice 2 - enforce branch pattern checks before mutation/push.
 - [ ] P1: Branch namespace slice 3 - add integration tests for allowed and denied namespaces.
 - [ ] P3: Actions pinning slice 1 - pin all third-party GitHub Actions to immutable SHAs.

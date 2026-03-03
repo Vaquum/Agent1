@@ -51,6 +51,14 @@ class GitHubCapabilities(BaseModel):
     write_pr_review_reply: bool
 
 
+class BranchMutationPatternsByEnvironment(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    dev: list[str] = Field(min_length=1)
+    prod: list[str] = Field(min_length=1)
+    ci: list[str] = Field(min_length=1)
+
+
 class PoliciesControl(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
@@ -60,6 +68,8 @@ class PoliciesControl(BaseModel):
     ignored_actors: list[str] = Field(default_factory=list)
     ignored_actor_suffixes: list[str] = Field(default_factory=lambda: ['[bot]'])
     deny_git_commands: list[str] = Field(default_factory=list)
+    allowed_git_mutation_commands: list[str] = Field(default_factory=list)
+    branch_mutation_patterns_by_environment: BranchMutationPatternsByEnvironment
     enforce_read_write_credential_split: bool
     default_deny_github_capabilities: bool
     fail_closed_policy_resolution: bool
@@ -125,6 +135,7 @@ class ControlBundle(BaseModel):
 
 
 __all__ = [
+    'BranchMutationPatternsByEnvironment',
     'CommentingControl',
     'ControlBundle',
     'GitHubCapabilities',

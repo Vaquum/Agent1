@@ -35,6 +35,12 @@ def _create_valid_controls(root: Path) -> None:
             'ignored_actors': [],
             'ignored_actor_suffixes': ['[bot]'],
             'deny_git_commands': ['git push --force'],
+            'allowed_git_mutation_commands': ['git add', 'git commit', 'git push'],
+            'branch_mutation_patterns_by_environment': {
+                'dev': ['sandbox/*'],
+                'prod': ['release/*'],
+                'ci': ['sandbox/*', 'ci/*'],
+            },
             'enforce_read_write_credential_split': True,
             'default_deny_github_capabilities': True,
             'fail_closed_policy_resolution': True,
@@ -110,6 +116,7 @@ def test_load_control_bundle_parses_valid_controls(tmp_path: Path) -> None:
     assert bundle.commenting.require_review_thread_reply is True
     assert bundle.policies.agent_actor == 'zero-bang'
     assert bundle.policies.ignored_actor_suffixes == ['[bot]']
+    assert bundle.policies.allowed_git_mutation_commands == ['git add', 'git commit', 'git push']
 
 
 def test_load_control_bundle_fails_when_control_file_missing(tmp_path: Path) -> None:

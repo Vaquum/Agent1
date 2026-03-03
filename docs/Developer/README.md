@@ -105,6 +105,10 @@ This directory contains developer-facing documentation for architecture, workflo
 - Runtime safety guarantees:
   - mutating GitHub calls perform credential-owner preflight binding against environment policy (`dev`/`prod`/`ci`),
   - read-only scanner operations and mutating operations use separate credentials when split enforcement is enabled,
+  - allowed git mutation command allowlist is defined in policy controls for codex-runtime enforcement,
+  - allowed branch mutation namespace patterns are defined per environment in policy controls,
+  - codex runtime execution blocks explicit git mutation commands that are denied or outside allowlist policy,
+  - operator response for codex git policy denials is documented in `docs/Developer/runbooks/git-mutation-policy-denials.md`,
   - GitHub capability checks are explicit and default-deny by policy,
   - policy resolution fails closed when control loading is missing or invalid.
 - Outbox reliability baseline is defined under:

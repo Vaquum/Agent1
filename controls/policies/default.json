@@ -14,6 +14,29 @@
     "git reset --hard",
     "git clean -fdx"
   ],
+  "allowed_git_mutation_commands": [
+    "git add",
+    "git commit",
+    "git checkout -b",
+    "git switch -c",
+    "git push",
+    "git revert",
+    "git cherry-pick",
+    "git rm",
+    "git mv"
+  ],
+  "branch_mutation_patterns_by_environment": {
+    "dev": [
+      "sandbox/*"
+    ],
+    "prod": [
+      "release/*"
+    ],
+    "ci": [
+      "sandbox/*",
+      "ci/*"
+    ]
+  },
   "enforce_read_write_credential_split": true,
   "default_deny_github_capabilities": true,
   "fail_closed_policy_resolution": true,
