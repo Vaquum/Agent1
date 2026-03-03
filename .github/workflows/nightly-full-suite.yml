@@ -42,6 +42,7 @@ jobs:
           python ../../tests/operations/permission_matrix_validation.py
           python ../../tests/operations/protected_mutation_approval_validation.py
           python ../../tests/operations/event_journal_chain_validation.py
+          python ../../tests/operations/retention_policy_validation.py
           python ../../tests/operations/workflow_supply_chain_validation.py
           python ../../tests/operations/dependency_vulnerability_gate.py --ecosystem python
           ruff check .

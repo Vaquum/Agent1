@@ -14,4 +14,5 @@ Operational runbooks for deployment, rollback, migration, and incident response.
 - `permission-matrix-validation.md`: response to permission-matrix control validation failures.
 - `protected-mutation-approvals.md`: response to protected policy/guardrail mutation approval failures.
 - `event-journal-chain-validation.md`: response to tamper-evident event-chain validation failures and backfill procedure.
+- `retention-and-purge-governance.md`: response to retention drift alerts and purge execution incident handling.
 - `ci-supply-chain-hardening.md`: response to action pinning, token-permission drift, and dependency-gate failures.

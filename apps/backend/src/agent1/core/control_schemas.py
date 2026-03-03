@@ -405,6 +405,55 @@ class ReleasePromotionPolicyControl(BaseModel):
         return self
 
 
+class RetentionMatrixEntryControl(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    artifact_type: Literal['logs', 'traces', 'test_artifacts']
+    environment: EnvironmentName
+    retention_days: int = Field(gt=0)
+
+
+class RetentionPolicyControl(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    entries: list[RetentionMatrixEntryControl] = Field(min_length=1)
+
+    @model_validator(mode='after')
+    def validate_retention_matrix_coverage(self) -> 'RetentionPolicyControl':
+        seen_pairs: set[tuple[str, str]] = set()
+        for entry in self.entries:
+            entry_pair = (entry.artifact_type, entry.environment.value)
+            if entry_pair in seen_pairs:
+                message = (
+                    'Retention policy contains duplicate artifact/environment pair: '
+                    f'{entry.artifact_type}:{entry.environment.value}'
+                )
+                raise ValueError(message)
+            seen_pairs.add(entry_pair)
+
+        required_artifacts = {'logs', 'traces', 'test_artifacts'}
+        required_environments = {
+            EnvironmentName.DEV.value,
+            EnvironmentName.PROD.value,
+            EnvironmentName.CI.value,
+        }
+        missing_pairs: list[str] = []
+        for artifact in sorted(required_artifacts):
+            for environment in sorted(required_environments):
+                required_pair = (artifact, environment)
+                if required_pair not in seen_pairs:
+                    missing_pairs.append(f'{artifact}:{environment}')
+
+        if len(missing_pairs) != 0:
+            message = (
+                'Retention policy missing artifact/environment entries: '
+                + ', '.join(missing_pairs)
+            )
+            raise ValueError(message)
+
+        return self
+
+
 class RuntimeControl(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
@@ -417,6 +466,7 @@ class RuntimeControl(BaseModel):
     poll_interval_seconds: int = Field(gt=0)
     watch_interval_seconds: int = Field(gt=0)
     max_retry_attempts: int = Field(ge=0)
+    retention_policy: RetentionPolicyControl
     rollout_policy: RolloutPolicyControl
     stop_the_line_policy: StopTheLinePolicyControl
     release_promotion_policy: ReleasePromotionPolicyControl
@@ -449,6 +499,8 @@ __all__ = [
     'ProtectedMutationFileDigestControl',
     'PoliciesControl',
     'PromptsControl',
+    'RetentionMatrixEntryControl',
+    'RetentionPolicyControl',
     'RuntimeControl',
     'RolloutHealthSignalControl',
     'RolloutPolicyControl',

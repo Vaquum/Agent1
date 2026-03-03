@@ -2,7 +2,7 @@
 
 ## Last Updated
 
-- Date: 2026-03-01
+- Date: 2026-03-03
 - Owner: Agent1 Team
 - Environment scope: `dev` sandbox for `Vaquum/Agent1`
 
@@ -14,6 +14,8 @@
   - `lease-and-idempotency-incidents.md`
   - `review-thread-routing-failures.md`
   - `github-rate-limit-and-token-failures.md`
+  - `event-journal-chain-validation.md`
+  - `retention-and-purge-governance.md`
 - Runbook index source: `docs/Developer/runbooks/README.md`
 
 ## Alert Routing Validation Evidence
@@ -27,6 +29,7 @@
 - Alert anomaly coverage includes:
   - `hash_chain_gap_anomalies`
   - `idempotency_scope_violations`
+  - `stop_the_line_threshold_breach`
 - CI suites that execute this validation path:
   - `pr-gates` -> `backend-quality`
   - `pr-gates` -> `operational-readiness`
@@ -84,6 +87,23 @@
   - `apps/backend/alembic/versions/20260306_000012_event_journal_chain.py`
 - Operator procedure for chain validation and backfill:
   - `docs/Developer/runbooks/event-journal-chain-validation.md`
+
+## Retention Governance Evidence
+
+- Retention drift validation source:
+  - `tests/operations/retention_policy_validation.py`
+- Retention purge execution runner source:
+  - `tests/operations/retention_purge_run.py`
+- Retention purge runner schema-safety behavior:
+  - deterministic failure output includes explicit `alembic upgrade head` remediation when schema is behind expected migration baseline.
+- Retention purge implementation source:
+  - `apps/backend/src/agent1/core/services/retention_purge_service.py`
+  - `apps/backend/src/agent1/db/repositories/retention_repository.py`
+- Retention purge integration and boundary coverage:
+  - `apps/backend/tests/test_retention_purge_service.py`
+  - `apps/backend/tests/test_retention_purge_run_script.py`
+- Operator procedure for retention and purge incidents:
+  - `docs/Developer/runbooks/retention-and-purge-governance.md`
 
 ## Deployment Availability Evidence
 

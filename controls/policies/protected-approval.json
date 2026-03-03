@@ -19,7 +19,7 @@
       },
       {
         "path": "runtime/default.json",
-        "sha256": "84ae6ebefa409734bb919d13cbb6f0a3a5945e4729039abebcd4e9ea43780c54"
+        "sha256": "d744ff0d588dd8ae80d3fff60463bc0c61944388fc95be574338364fde2498df"
       }
     ]
   },
@@ -31,6 +31,14 @@
       "recorded_at": "2026-03-01T00:00:00Z",
       "recorded_by": "mikkokotila",
       "note": "Initial protected approval audit event for policy and guardrail control baseline."
+    },
+    {
+      "event_id": "policy_guardrail_approval_20260308_001_approved",
+      "approval_id": "policy_guardrail_approval_20260301_001",
+      "decision": "approved",
+      "recorded_at": "2026-03-08T00:00:00Z",
+      "recorded_by": "mikkokotila",
+      "note": "Approved retention-policy matrix baseline update for runtime controls."
     }
   ]
 }

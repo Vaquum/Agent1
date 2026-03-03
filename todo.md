@@ -79,12 +79,35 @@ Tracking list of remaining items against `spec.md` acceptance criteria.
 - [x] P3: Anomaly detection slice 2 - detect idempotency violations across scopes.
 - [x] P3: Anomaly detection slice 3 - expose anomalies in dashboard and runbooks.
 
-### Slice b6 - Retention and Purge Governance
+### Slice c1 - Retention Matrix Control Baseline
 
-- [ ] P3: Retention policy slice 1 - define retention matrix for logs, traces, and artifacts.
-- [ ] P3: Retention policy slice 2 - implement purge jobs with dry-run/report mode.
-- [ ] P3: Retention policy slice 3 - add controls + CI checks for retention policy drift.
-- [ ] P3: Retention policy slice 4 - add integration tests and operator docs.
+- [x] P3: Define machine-readable retention matrix for `logs`, `traces`, and `test_artifacts` across `dev`/`prod`/`ci`.
+- [x] P3: Enforce retention matrix schema validation at control load time.
+- [x] P3: Add deterministic tests and docs coverage for retention matrix control baseline.
+
+### Slice c2 - Purge Jobs and Dry-Run Reporting
+
+- [x] P3: Implement retention purge executor with explicit `dry_run` and `execute` modes.
+- [x] P3: Add deterministic purge report output format for operator review.
+- [x] P3: Add purge safety guards for environment scope and policy validation.
+
+### Slice c3 - Retention Drift Gates
+
+- [x] P3: Add retention policy validation runner under `tests/operations`.
+- [x] P3: Wire retention drift validation into PR and nightly backend quality gates.
+- [x] P3: Add policy drift controls/docs source-of-truth references.
+
+### Slice c4 - Retention Integration and Runbooks
+
+- [x] P3: Add integration tests for purge flow and retention policy enforcement boundaries.
+- [x] P3: Add operator runbook for retention and purge incident handling.
+- [x] P3: Update user/developer docs and behavior matrix for retention governance coverage.
+
+### Slice c5 - Spec Parity Refresh
+
+- [x] P3: Refresh `spec.md` alert list to include implemented anomaly alerts.
+- [x] P3: Refresh `spec.md` status/date metadata to match current implementation baseline.
+- [x] P3: Verify spec-to-doc parity for retention, anomaly, and control-plane coverage.
 
 ## Testing And CI
 
@@ -133,3 +156,7 @@ Tracking list of remaining items against `spec.md` acceptance criteria.
 - [x] P1: Emit and verify alert signals for outbox backlog growth.
 - [x] P1: Emit and verify alert signals for elevated failed transition rates.
 - [x] P1: Ensure critical alert payloads always include `trace_id`, `job_id`, and runbook linkage.
+
+## Daemon Slice
+
+- [ ] P3: After all remnant slices are completed, author comprehensive human-partner user documentation as many short, deeply interlinked markdown files with a compelling narrative arc, ending with a `Future Horizons` section that explicitly covers eventual self-assignment and recursive self-evolution (`Agent1 builds Agent1`, ad infinitum).

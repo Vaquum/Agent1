@@ -171,6 +171,55 @@ def _create_valid_controls(root: Path) -> None:
             'poll_interval_seconds': 30,
             'watch_interval_seconds': 30,
             'max_retry_attempts': 5,
+            'retention_policy': {
+                'entries': [
+                    {
+                        'artifact_type': 'logs',
+                        'environment': 'dev',
+                        'retention_days': 14,
+                    },
+                    {
+                        'artifact_type': 'logs',
+                        'environment': 'prod',
+                        'retention_days': 30,
+                    },
+                    {
+                        'artifact_type': 'logs',
+                        'environment': 'ci',
+                        'retention_days': 14,
+                    },
+                    {
+                        'artifact_type': 'traces',
+                        'environment': 'dev',
+                        'retention_days': 14,
+                    },
+                    {
+                        'artifact_type': 'traces',
+                        'environment': 'prod',
+                        'retention_days': 30,
+                    },
+                    {
+                        'artifact_type': 'traces',
+                        'environment': 'ci',
+                        'retention_days': 14,
+                    },
+                    {
+                        'artifact_type': 'test_artifacts',
+                        'environment': 'dev',
+                        'retention_days': 14,
+                    },
+                    {
+                        'artifact_type': 'test_artifacts',
+                        'environment': 'prod',
+                        'retention_days': 30,
+                    },
+                    {
+                        'artifact_type': 'test_artifacts',
+                        'environment': 'ci',
+                        'retention_days': 14,
+                    },
+                ]
+            },
             'rollout_policy': {
                 'health_signals': [
                     {
@@ -255,6 +304,7 @@ def test_load_control_bundle_parses_valid_controls(tmp_path: Path) -> None:
         'side_effect_success_rate',
         'lease_violation_rate',
     ]
+    assert len(bundle.runtime.retention_policy.entries) == 9
     assert bundle.runtime.stop_the_line_policy.rules[0].signal_id == 'error_rate'
     assert bundle.runtime.stop_the_line_policy.rules[1].threshold == 0.01
     assert bundle.runtime.release_promotion_policy.preconditions[0].precondition_id == (
@@ -345,6 +395,26 @@ def test_load_control_bundle_fails_when_permission_matrix_is_missing_component_e
         )
     ]
     permission_matrix_path.write_text(json.dumps(permission_matrix_payload), encoding='utf-8')
+
+    with pytest.raises(ControlValidationError):
+        load_control_bundle(tmp_path)
+
+
+def test_load_control_bundle_fails_when_retention_policy_is_missing_artifact_environment_pair(
+    tmp_path: Path,
+) -> None:
+    _create_valid_controls(tmp_path)
+    runtime_path = tmp_path / 'runtime' / CONTROL_FILE_NAME
+    runtime_payload = json.loads(runtime_path.read_text(encoding='utf-8'))
+    runtime_payload['retention_policy']['entries'] = [
+        entry
+        for entry in runtime_payload['retention_policy']['entries']
+        if not (
+            entry.get('artifact_type') == 'logs'
+            and entry.get('environment') == 'prod'
+        )
+    ]
+    runtime_path.write_text(json.dumps(runtime_payload), encoding='utf-8')
 
     with pytest.raises(ControlValidationError):
         load_control_bundle(tmp_path)

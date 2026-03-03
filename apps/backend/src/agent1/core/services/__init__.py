@@ -9,6 +9,7 @@ __all__ = [
     'mention_action_executor',
     'outbox_dispatcher',
     'persistence_service',
+    'retention_purge_service',
     'release_promotion_gate_service',
     'rollout_stage_gate',
     'rollout_guard_service',

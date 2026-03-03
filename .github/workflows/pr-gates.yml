@@ -52,6 +52,9 @@ jobs:
       - name: Event journal chain validation
         run: python ../../tests/operations/event_journal_chain_validation.py
 
+      - name: Retention policy validation
+        run: python ../../tests/operations/retention_policy_validation.py
+
       - name: Workflow supply-chain validation
         run: python ../../tests/operations/workflow_supply_chain_validation.py
 

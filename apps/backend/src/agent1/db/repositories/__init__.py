@@ -8,6 +8,7 @@ __all__ = [
     'ingestion_cursor_repository',
     'job_repository',
     'outbox_repository',
+    'retention_repository',
     'runtime_scope_guard_repository',
     'watcher_repository',
 ]

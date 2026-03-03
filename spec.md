@@ -1,8 +1,9 @@
 # Agent1 Specification
 
-Status: Draft  
+Status: Active Implementation (v1)  
 Owner: Agent1 Team  
-Last Updated: 2026-03-01
+Last Updated: 2026-03-03
+Implementation Baseline: Through retention governance integration (`c4`).
 
 ## 1) Purpose
 
@@ -313,6 +314,9 @@ Design principle:
 {
   "timestamp": "2026-03-01T12:00:00Z",
   "environment": "dev|prod|ci",
+  "event_seq": "int|null",
+  "prev_event_hash": "hex64|null",
+  "payload_hash": "hex64|null",
   "trace_id": "trc_...",
   "job_id": "job_...",
   "entity_key": "owner/repo#123",
@@ -333,7 +337,10 @@ Secrets must be redacted before persistence.
   - duplicate side-effect anomalies,
   - comment-routing failures,
   - outbox backlog growth,
-  - elevated failed transition rates.
+  - elevated failed transition rates,
+  - hash-chain gap anomalies,
+  - idempotency-scope violations,
+  - stop-the-line threshold breaches.
 - Every critical alert links to the relevant runbook and includes correlated `trace_id`/`job_id`.
 
 ## 12) Tech Stack (Now vs Later)
@@ -390,16 +397,17 @@ Secrets must be redacted before persistence.
   - runtime enforces pre-flight `credential_owner == expected_env_identity` before mutating calls,
   - read-only watchers and mutators use separate least-privilege credentials.
 - Least-privilege permission matrix:
-  - machine-readable matrix by component (`api`, `worker`, `watcher`, `dashboard`, `ci`) and environment (`dev`, `prod`),
+  - machine-readable matrix by component (`api`, `worker`, `watcher`, `dashboard`, `ci`) and environment (`dev`, `prod`, `ci`),
   - default-deny capability model for GitHub operations,
   - split persistence roles (`migrator`, `runtime`, `readonly_analytics`) with minimum privileges.
 - Policy bypass prevention:
   - protected approval path for policy and guardrail changes,
+  - hash-locked protected control snapshots with append-only approval audit trail,
   - fail-closed behavior when policy resolution is missing or invalid.
 - Safe Git operations contract:
   - explicit allowlist for git mutations,
   - hard deny destructive operations (`git push --force`, `git push --force-with-lease`, `git reset --hard`, `git clean -fdx`, branch/tag deletion),
-  - restrict mutations to approved branch namespaces (`agent1/*`, `sandbox/*`) and protected branch workflows.
+  - restrict mutations to approved branch namespaces by environment policy (for example `sandbox/*` in dev/ci, `release/*` in prod) and protected branch workflows.
 - CI and dependency supply-chain controls:
   - pin CI actions by immutable SHA,
   - enforce least-privilege job tokens,
@@ -408,7 +416,8 @@ Secrets must be redacted before persistence.
 - Audit integrity and privacy:
   - append-only tamper-evident chain (`event_seq`, `prev_event_hash`, `payload_hash`),
   - anomaly detection for hash-chain gaps and idempotency violations,
-  - retention and purge policies for logs, traces, and test artifacts.
+  - machine-readable retention policy matrix for logs, traces, and test artifacts across `dev`/`prod`/`ci`,
+  - retention drift validation in CI and deterministic purge execution with explicit dry-run and production acknowledgement.
 
 ## 13) Testing Strategy
 
@@ -453,6 +462,8 @@ Secrets must be redacted before persistence.
 - Python typecheck.
 - Ruff and lint checks.
 - Unit/integration tests.
+- Control-plane drift validations (`permission_matrix_validation.py`, `protected_mutation_approval_validation.py`, `retention_policy_validation.py`).
+- Audit and supply-chain validations (`event_journal_chain_validation.py`, `workflow_supply_chain_validation.py`).
 - PR E2E smoke suite.
 - PR smoke scenario/spec selection and environment contract are defined in `tests/scenarios/pr-smoke-catalog.json` and `tests/scenarios/pr-smoke-env-contract.md`.
 - PR gate smoke execution is wired through `tests/scenarios/pr_smoke_run.py` with smoke artifact upload.
@@ -463,6 +474,7 @@ Secrets must be redacted before persistence.
 - Full E2E scenario suite on `main`.
 - Nightly browser scenarios run with retained Playwright artifacts and failure-summary output.
 - Nightly gate jobs enforce timeout, schedule, and concurrency guardrails.
+- Nightly backend quality re-runs control-plane drift, event-chain integrity, and supply-chain validation runners.
 
 ### 14.3 Environment Safety Gates
 
@@ -572,13 +584,18 @@ A change is not complete until checklist items are satisfied and CI passes.
 - Docs must be updated in the same change that modifies behavior or expectations.
 - Documentation drift is treated as a quality failure.
 
-### Required Runbook Set
+### Required Runbook Set (Gate-Enforced Minimum)
 
 - `docs/Developer/runbooks/deploy-and-rollback.md`
 - `docs/Developer/runbooks/migration-failback.md`
 - `docs/Developer/runbooks/lease-and-idempotency-incidents.md`
 - `docs/Developer/runbooks/review-thread-routing-failures.md`
 - `docs/Developer/runbooks/github-rate-limit-and-token-failures.md`
+
+### Additional Specialized Runbooks
+
+- `docs/Developer/runbooks/event-journal-chain-validation.md`
+- `docs/Developer/runbooks/retention-and-purge-governance.md`
 
 ## 19) Delivery Phases
 
@@ -615,4 +632,5 @@ A change is not complete until checklist items are satisfied and CI passes.
 - Reviewer mode for non-Agent1-authored PRs is first-class in behavior and tests.
 - Reliability hardening controls match plan requirements.
 - Security and governance controls match plan requirements.
+- Retention governance and anomaly-alert coverage match implemented controls, CI gates, and runbooks.
 - Operability controls (migration safety, rollback, incident response, SLO/error budget, runbooks) match plan requirements.

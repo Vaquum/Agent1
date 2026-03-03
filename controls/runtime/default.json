@@ -10,6 +10,55 @@
   "poll_interval_seconds": 30,
   "watch_interval_seconds": 30,
   "max_retry_attempts": 5,
+  "retention_policy": {
+    "entries": [
+      {
+        "artifact_type": "logs",
+        "environment": "dev",
+        "retention_days": 14
+      },
+      {
+        "artifact_type": "logs",
+        "environment": "prod",
+        "retention_days": 30
+      },
+      {
+        "artifact_type": "logs",
+        "environment": "ci",
+        "retention_days": 14
+      },
+      {
+        "artifact_type": "traces",
+        "environment": "dev",
+        "retention_days": 14
+      },
+      {
+        "artifact_type": "traces",
+        "environment": "prod",
+        "retention_days": 30
+      },
+      {
+        "artifact_type": "traces",
+        "environment": "ci",
+        "retention_days": 14
+      },
+      {
+        "artifact_type": "test_artifacts",
+        "environment": "dev",
+        "retention_days": 14
+      },
+      {
+        "artifact_type": "test_artifacts",
+        "environment": "prod",
+        "retention_days": 30
+      },
+      {
+        "artifact_type": "test_artifacts",
+        "environment": "ci",
+        "retention_days": 14
+      }
+    ]
+  },
   "rollout_policy": {
     "health_signals": [
       {

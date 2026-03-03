@@ -15,6 +15,10 @@ This directory contains developer-facing documentation for architecture, workflo
 - Rollout guard rollback-trigger decisions are implemented under `apps/backend/src/agent1/core/services/rollout_guard_service.py` with active-mode downgrade semantics (`active -> shadow`) on failed stage gates.
 - Runtime controls now include machine-readable stop-the-line threshold rules under `controls/runtime/default.json` (`stop_the_line_policy`) for severe error, lease, duplicate-side-effect, and policy-failure signals.
 - Runtime controls now include machine-readable release-promotion preconditions under `controls/runtime/default.json` (`release_promotion_policy`) linked to readiness evidence and policy state.
+- Runtime controls now include machine-readable retention policy coverage under `controls/runtime/default.json` (`retention_policy`) for `logs`, `traces`, and `test_artifacts` across `dev`/`prod`/`ci`.
+- Retention purge execution baseline is implemented under `apps/backend/src/agent1/core/services/retention_purge_service.py` with explicit `dry_run`/`execute` modes, deterministic report rendering, and environment-scoped purge safety guards.
+- Retention purge persistence operations are implemented under `apps/backend/src/agent1/db/repositories/retention_repository.py`, including `logs` (`event_journal`), `traces` (`github_events`), and `test_artifacts` (`audit_runs`) cutoff deletes.
+- Retention purge operations runner is implemented under `tests/operations/retention_purge_run.py` with deterministic reference-timestamp support for operator reproducibility.
 - Stop-the-line threshold evaluation and automatic mode-downgrade decisions are implemented under `apps/backend/src/agent1/core/services/stop_the_line_service.py` and wired into application runtime state.
 - Stop-the-line threshold breach alert emission and operator acknowledgement persistence are implemented in `apps/backend/src/agent1/core/services/alert_signal_service.py`, including `POST /dashboard/alerts/stop-the-line/acknowledge` operator flow.
 - Release-promotion precondition evaluation is implemented under `apps/backend/src/agent1/core/services/release_promotion_gate_service.py` and wired into application runtime state.
@@ -121,9 +125,12 @@ This directory contains developer-facing documentation for architecture, workflo
   - `tests/operations/permission_matrix_validation.py`
   - `tests/operations/protected_mutation_approval_validation.py`
   - `tests/operations/event_journal_chain_validation.py`
+  - `tests/operations/retention_policy_validation.py`
   - `apps/backend/src/agent1/config/settings.py`
 - Runtime safety guarantees:
   - machine-readable permission-matrix coverage is loaded from `controls/policies/permission-matrix.json` and merged into policy controls during startup validation,
+  - machine-readable retention-policy coverage is loaded from `controls/runtime/default.json` and requires one entry for each (`artifact_type`, `environment`) pair across `logs`/`traces`/`test_artifacts` and `dev`/`prod`/`ci`,
+  - retention-policy drift validation enforces required scope coverage and non-shorter `prod` retention windows versus `dev`/`ci` for each artifact class,
   - permission-matrix validation requires one entry for every (`component`, `environment`) pair across `api`/`worker`/`watcher`/`dashboard`/`ci` and `dev`/`prod`/`ci`,
   - persistence least-privilege role declarations are required in policy controls for `migrator`, `runtime`, and `readonly_analytics`,
   - protected policy/guardrail mutation approval snapshot is loaded from `controls/policies/protected-approval.json` and enforced at startup with fail-closed hash checks,
@@ -215,10 +222,16 @@ This directory contains developer-facing documentation for architecture, workflo
 - Permission-matrix validation is enforced in PR and nightly backend quality gates via `tests/operations/permission_matrix_validation.py`.
 - Protected mutation approval validation is enforced in PR and nightly backend quality gates via `tests/operations/protected_mutation_approval_validation.py`.
 - Event-journal chain validation is enforced in PR and nightly backend quality gates via `tests/operations/event_journal_chain_validation.py`.
+- Retention-policy validation is enforced in PR and nightly backend quality gates via `tests/operations/retention_policy_validation.py`.
+- Retention purge integration and boundary behavior coverage is defined in:
+  - `apps/backend/tests/test_retention_purge_service.py`
+  - `apps/backend/tests/test_retention_purge_run_script.py`
 - Workflow supply-chain hardening validation is enforced in PR and nightly backend quality gates via `tests/operations/workflow_supply_chain_validation.py`.
 - Dependency vulnerability gates are enforced through `tests/operations/dependency_vulnerability_gate.py` for:
   - python dependencies in backend quality jobs,
   - node dependencies in frontend quality jobs.
+- Retention-policy source of truth is `controls/runtime/default.json` (`retention_policy`) with drift enforcement in `tests/operations/retention_policy_validation.py`.
+- Retention purge incident procedure is documented in `docs/Developer/runbooks/retention-and-purge-governance.md`.
 - CI token-permission policy source is `docs/Developer/ci-token-permissions-policy.json` and is treated as drift-control source of truth.
 - Dependency vulnerability threshold/exception policy source is `docs/Developer/dependency-vulnerability-policy.json` with operator guidance in `docs/Developer/dependency-vulnerability-policy.md`.
 - Third-party workflow actions are pinned to immutable SHAs across CI workflows.
@@ -253,9 +266,12 @@ This directory contains developer-facing documentation for architecture, workflo
   - `docs/Developer/rollback-rehearsal-log.md` (rollback rehearsal evidence log)
   - `tests/operations/run.py` (required runbook and evidence validator)
   - `tests/operations/release_promotion_gate.py` (release-promotion precondition evaluator)
+  - `tests/operations/retention_policy_validation.py` (retention drift-control validator)
+  - `tests/operations/retention_purge_run.py` (retention dry-run/execute operator runner)
   - `tests/operations/README.md` (operations gate index)
   - `docs/Developer/runbooks/release-promotion-gate.md` (operator release-promotion gate procedure)
   - `docs/Developer/runbooks/pr-smoke-failures-and-reruns.md` (PR smoke fail policy and rerun procedure)
+  - `docs/Developer/runbooks/retention-and-purge-governance.md` (retention drift/purge incident response)
 - Deployment artifacts and environment contract are defined under:
   - `apps/backend/Dockerfile` (backend runtime container image)
   - `apps/backend/docker/entrypoint.sh` (backend startup and migration command)

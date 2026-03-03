@@ -16,9 +16,9 @@ Current operations dashboard capability:
 - Concurrent dev/prod isolation scenarios now assert that dev active handles sandbox-marked entities while prod active ignores sandbox scope to prevent duplicate side effects.
 - Mutating GitHub side effects enforce lease-epoch validation to reject stale-owner writes before dispatch.
 - Side-effect attempt lifecycle is persisted in `action_attempts` with `started`, `succeeded`, `failed`, and `aborted` statuses linked to job/outbox scope.
-- Audit run snapshots are scaffolded in `audit_runs` with environment scope, status, timing, and JSON snapshot fields for durability.
+- Audit run snapshots are persisted in `audit_runs` with environment scope, status, timing, and JSON snapshot fields for durability.
 - Audit run persistence now supports append and filtered list APIs for environment-scoped operational snapshots.
-- Deterministic comment routing targets are now durably scaffolded in `comment_targets` with job/outbox linkage.
+- Deterministic comment routing targets are now durably persisted in `comment_targets` with job/outbox linkage.
 - Comment-target replay and idempotency lookups are available via outbox-scope and idempotency-scope persistence APIs.
 - Canonical idempotency key generation now uses deterministic side-effect scope fields with payload/policy hashing (`entity_key`, `action_type`, `target_identity`, `payload_hash`, `policy_version_hash`).
 - Outbox reconciliation now applies schema-component scope filtering (`idempotency_schema_version`, `idempotency_payload_hash`, `idempotency_policy_version_hash`) when available.
@@ -31,6 +31,12 @@ Current operations dashboard capability:
 - Runtime safety policy controls now include per-environment branch mutation namespace patterns.
 - Runtime safety policy controls now include a machine-readable permission matrix for component/environment least-privilege declarations and persistence-role scopes.
 - Runtime safety policy controls now include a protected mutation approval artifact with hash-locked policy/guardrail snapshots and append-only approval audit trail.
+- Runtime controls now include machine-readable retention policy entries for `logs`, `traces`, and `test_artifacts` across `dev`, `prod`, and `ci`.
+- Retention purge execution now supports explicit `dry_run` and `execute` modes with deterministic operator report payloads and environment-scoped safety guards.
+- PR and nightly backend gates now enforce retention-policy drift validation through `tests/operations/retention_policy_validation.py`.
+- Retention purge execution is available to operators through `tests/operations/retention_purge_run.py` with explicit production execute acknowledgement.
+- Retention and purge incident handling is documented in `docs/Developer/runbooks/retention-and-purge-governance.md`.
+- Retention purge boundaries are integration-tested to preserve rows at exact cutoff timestamps and purge only rows older than cutoff.
 - Event journal persistence now includes tamper-evident chain fields (`event_seq`, `prev_event_hash`, `payload_hash`) with deterministic per-environment sequencing.
 - Codex runtime execution now blocks explicit disallowed git mutation commands before task dispatch.
 - Codex runtime execution now blocks explicit branch create/push commands that target branch namespaces outside the current environment policy.
