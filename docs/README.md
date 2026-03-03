@@ -1,74 +1,35 @@
-# Agent1 User Docs
+# Agent1 Docs
 
-This directory contains user-facing documentation for capabilities, configuration, and operations.
+If you are the human partner of Agent1, start here:
 
-Current operations dashboard capability:
+- **Partner guide**: `docs/Partner/README.md`
 
-- Dashboard UI renders recent jobs, transitions, and events with filter and pagination controls.
-- Dashboard data source is `GET /dashboard/overview` with optional filters for `entity_key`, `job_id`, `trace_id`, and `status`.
-- Dashboard supports single-job drill-down via `GET /dashboard/jobs/{job_id}/timeline`.
-- Timeline drill-down includes event detail inspection with transition correlation, trace-based pivot filtering, and action-attempt lifecycle visibility.
-- Dashboard overview now includes a dedicated anomaly feed sourced from emitted alert signals.
-- Ingress processing persists deterministic ordering metadata (`source_event_id`, `source_timestamp_or_seq`, `received_at`) and skips stale/out-of-order events without backward lifecycle transitions.
-- Entity metadata is persisted durably in `entities` for stable environment-scoped entity identity.
-- Ingress orchestration ensures entities are created and touched continuously as normalized events are processed.
-- PR reviewer lifecycle scenarios now cover multi-round follow-up progression and terminal completion when human `merged`/`closed` decisions are observed on PR updates.
-- Concurrent dev/prod isolation scenarios now assert that dev active handles sandbox-marked entities while prod active ignores sandbox scope to prevent duplicate side effects.
-- Mutating GitHub side effects enforce lease-epoch validation to reject stale-owner writes before dispatch.
-- Side-effect attempt lifecycle is persisted in `action_attempts` with `started`, `succeeded`, `failed`, and `aborted` statuses linked to job/outbox scope.
-- Audit run snapshots are persisted in `audit_runs` with environment scope, status, timing, and JSON snapshot fields for durability.
-- Audit run persistence now supports append and filtered list APIs for environment-scoped operational snapshots.
-- Deterministic comment routing targets are now durably persisted in `comment_targets` with job/outbox linkage.
-- Comment-target replay and idempotency lookups are available via outbox-scope and idempotency-scope persistence APIs.
-- Canonical idempotency key generation now uses deterministic side-effect scope fields with payload/policy hashing (`entity_key`, `action_type`, `target_identity`, `payload_hash`, `policy_version_hash`).
-- Outbox reconciliation now applies schema-component scope filtering (`idempotency_schema_version`, `idempotency_payload_hash`, `idempotency_policy_version_hash`) when available.
-- Watcher runtime state is persisted durably with stale-watcher reclaim, checkpoint restoration, and explicit operator-required escalation for stuck watchers.
-- Runtime alert signals are emitted for lease violations, duplicate side-effect anomalies, comment-routing failures, outbox backlog growth, and elevated failed transition rates.
-- Runtime alert signals now include hash-chain gap anomalies and idempotency scope violations.
-- Critical alert payloads always include `trace_id`, `job_id`, and runbook linkage.
-- Runtime safety policy controls enforce credential-owner preflight checks, read/write credential separation, default-deny GitHub capabilities, and fail-closed policy resolution.
-- Runtime safety policy controls now include an explicit allowlist for permitted git mutation commands.
-- Runtime safety policy controls now include per-environment branch mutation namespace patterns.
-- Runtime safety policy controls now include a machine-readable permission matrix for component/environment least-privilege declarations and persistence-role scopes.
-- Runtime safety policy controls now include a protected mutation approval artifact with hash-locked policy/guardrail snapshots and append-only approval audit trail.
-- Runtime controls now include machine-readable retention policy entries for `logs`, `traces`, and `test_artifacts` across `dev`, `prod`, and `ci`.
-- Retention purge execution now supports explicit `dry_run` and `execute` modes with deterministic operator report payloads and environment-scoped safety guards.
-- PR and nightly backend gates now enforce retention-policy drift validation through `tests/operations/retention_policy_validation.py`.
-- Retention purge execution is available to operators through `tests/operations/retention_purge_run.py` with explicit production execute acknowledgement.
-- Retention and purge incident handling is documented in `docs/Developer/runbooks/retention-and-purge-governance.md`.
-- Retention purge boundaries are integration-tested to preserve rows at exact cutoff timestamps and purge only rows older than cutoff.
-- Event journal persistence now includes tamper-evident chain fields (`event_seq`, `prev_event_hash`, `payload_hash`) with deterministic per-environment sequencing.
-- Codex runtime execution now blocks explicit disallowed git mutation commands before task dispatch.
-- Codex runtime execution now blocks explicit branch create/push commands that target branch namespaces outside the current environment policy.
-- PR and nightly backend gates now validate permission-matrix control integrity through `tests/operations/permission_matrix_validation.py`.
-- PR and nightly backend gates now validate protected mutation approval integrity through `tests/operations/protected_mutation_approval_validation.py`.
-- PR and nightly backend gates now validate event-journal tamper-evident chain integrity through `tests/operations/event_journal_chain_validation.py`.
-- CI workflows now pin all third-party GitHub Actions to immutable commit SHAs.
-- CI workflows now enforce per-job minimal token permissions with drift validation from `docs/Developer/ci-token-permissions-policy.json`.
-- PR and nightly quality gates now enforce dependency vulnerability checks for python and node using `tests/operations/dependency_vulnerability_gate.py`.
-- Dependency vulnerability threshold and temporary exception policy is defined in `docs/Developer/dependency-vulnerability-policy.json`.
-- Runtime controls define progressive rollout stages with required health signals in machine-readable policy form.
-- Runtime bootstrapping now includes rollout stage-gate evaluation for deployment/runtime control checks.
-- Failed rollout stage gates now trigger deterministic rollback decisions with active-mode downgrade to shadow mode.
-- Runtime controls define severe stop-the-line thresholds for error rate, lease violations, duplicate side effects, and policy enforcement failures.
-- Stop-the-line threshold breaches now trigger deterministic automatic active-to-shadow mode downgrade decisions.
-- Stop-the-line threshold breaches now emit dedicated operational alerts, and operators can persist acknowledgements through `POST /dashboard/alerts/stop-the-line/acknowledge`.
-- Runtime controls define machine-readable release-promotion preconditions linked to operational readiness evidence and policy state.
-- Release workflow path now includes release-promotion precondition gate execution through `tests/operations/release_promotion_gate.py`.
-- Release-promotion gate execution now persists one `audit_runs` snapshot with decision evidence for each gate run.
-- Operator release-promotion gate procedure is documented in `docs/Developer/runbooks/release-promotion-gate.md`.
-- Playwright E2E scaffold is available for dashboard operator flows with CI browser setup and smoke execution.
-- Playwright suite now covers operator overview-filter and timeline drill-down flow using deterministic mocked dashboard APIs.
-- Playwright suite now covers operator trace-pivot and selected-event detail inspection flow.
-- Playwright local and CI run instructions are documented in `apps/frontend/tests/e2e/README.md`.
-- PR smoke scenario/spec selection and environment contract are defined in `tests/scenarios/pr-smoke-catalog.json` and `tests/scenarios/pr-smoke-env-contract.md`.
-- PR gates run backend PR smoke via `tests/scenarios/pr_smoke_run.py` and upload backend/frontend smoke artifacts.
-- PR smoke fail policy and rerun procedure are documented in `docs/Developer/runbooks/pr-smoke-failures-and-reruns.md`.
-- Nightly workflow now retains Playwright artifacts, emits failure summaries, and applies timeout/concurrency guardrails for E2E reliability.
-- Operational readiness is tracked in `docs/Developer/operational-readiness.md` and validated by CI gates.
-- Service-level and error-budget policy is defined in `docs/Developer/service-level-policy.md` and enforced by operational-readiness validation.
-- Alert routing severity and runbook linkage is maintained in `docs/Developer/alert-routing-matrix.json`.
-- Incident lifecycle policy is defined in `docs/Developer/incident-response-policy.md`.
-- Release freeze and exception control is maintained in `docs/Developer/release-control.json`.
-- Rollback rehearsal evidence is recorded in `docs/Developer/rollback-rehearsal-log.md`.
-- Docker-on-Render deployment baseline is defined in `render.yaml` with environment contract in `docs/Developer/deployment-environment-contract.md`.
+This guide is written as a short linked journey. It covers how to work with Agent1 day-to-day, how to read what it is doing, and how to decide when to trust, pause, or redirect it.
+
+## Fast Path (10 Minutes)
+
+1. `docs/Partner/01-your-role.md`
+2. `docs/Partner/02-first-hour.md`
+3. `docs/Partner/07-dashboard-signals.md`
+4. `docs/Partner/08-safety-model.md`
+
+## Full Story Arc
+
+- `docs/Partner/README.md`
+- `docs/Partner/01-your-role.md`
+- `docs/Partner/02-first-hour.md`
+- `docs/Partner/03-daily-partnership-loop.md`
+- `docs/Partner/04-how-to-ask-agent1.md`
+- `docs/Partner/05-issue-journey.md`
+- `docs/Partner/06-pr-journey.md`
+- `docs/Partner/07-dashboard-signals.md`
+- `docs/Partner/08-safety-model.md`
+- `docs/Partner/09-sandbox-to-production.md`
+- `docs/Partner/10-incident-rhythm.md`
+- `docs/Partner/11-future-horizons.md`
+
+## Related References
+
+- `docs/architecture.md` for a concise implemented architecture map.
+- `docs/behavior-matrix.md` for test and behavior coverage.
+- `docs/Developer/` for engineering internals and runbooks.
