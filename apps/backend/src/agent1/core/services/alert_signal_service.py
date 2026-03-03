@@ -19,13 +19,21 @@ COMMENT_ROUTING_FAILURES_ALERT = 'comment_routing_failures'
 OUTBOX_BACKLOG_GROWTH_ALERT = 'outbox_backlog_growth'
 ELEVATED_FAILED_TRANSITION_RATES_ALERT = 'elevated_failed_transition_rates'
 STOP_THE_LINE_THRESHOLD_BREACH_ALERT = 'stop_the_line_threshold_breach'
+HASH_CHAIN_GAP_ANOMALIES_ALERT = 'hash_chain_gap_anomalies'
+IDEMPOTENCY_SCOPE_VIOLATIONS_ALERT = 'idempotency_scope_violations'
 STOP_THE_LINE_SYSTEM_JOB_ID = 'system:stop_the_line'
 STOP_THE_LINE_SYSTEM_ENTITY_KEY = 'system:stop_the_line'
+EVENT_CHAIN_SYSTEM_JOB_ID = 'system:event_chain'
+EVENT_CHAIN_SYSTEM_ENTITY_KEY = 'system:event_chain'
+IDEMPOTENCY_SYSTEM_JOB_ID = 'system:idempotency'
+IDEMPOTENCY_SYSTEM_ENTITY_KEY = 'system:idempotency'
 SEV1 = 'sev1'
 SEV2 = 'sev2'
 OUTBOX_BACKLOG_ALERT_THRESHOLD = 50
 FAILED_TRANSITION_ALERT_THRESHOLD = 10
 FAILED_TRANSITION_WINDOW_SECONDS = 300
+EVENT_CHAIN_FINDING_SAMPLE_LIMIT = 5
+IDEMPOTENCY_SCOPE_VIOLATION_SAMPLE_LIMIT = 10
 ALERT_RUNBOOK_PATHS: dict[str, str] = {
     LEASE_VIOLATIONS_ALERT: 'docs/Developer/runbooks/lease-and-idempotency-incidents.md',
     DUPLICATE_SIDE_EFFECT_ANOMALIES_ALERT: 'docs/Developer/runbooks/lease-and-idempotency-incidents.md',
@@ -33,6 +41,8 @@ ALERT_RUNBOOK_PATHS: dict[str, str] = {
     OUTBOX_BACKLOG_GROWTH_ALERT: 'docs/Developer/runbooks/lease-and-idempotency-incidents.md',
     ELEVATED_FAILED_TRANSITION_RATES_ALERT: 'docs/Developer/runbooks/github-rate-limit-and-token-failures.md',
     STOP_THE_LINE_THRESHOLD_BREACH_ALERT: 'docs/Developer/runbooks/stop-the-line-alerts.md',
+    HASH_CHAIN_GAP_ANOMALIES_ALERT: 'docs/Developer/runbooks/event-journal-chain-validation.md',
+    IDEMPOTENCY_SCOPE_VIOLATIONS_ALERT: 'docs/Developer/runbooks/lease-and-idempotency-incidents.md',
 }
 
 
@@ -113,6 +123,13 @@ class AlertSignalService:
                     failed_transition_count += 1
 
             if event.source != EventSource.POLICY or event.event_type != EventType.API_CALL:
+                continue
+
+            action = event.details.get('action')
+            if isinstance(action, str) and action in {
+                'emit_alert_signal',
+                'acknowledge_stop_the_line_alert',
+            }:
                 continue
 
             policy_api_call_count += 1
@@ -365,6 +382,89 @@ class AlertSignalService:
         )
         return True
 
+    def maybe_emit_hash_chain_gap_anomalies(
+        self,
+        environment: EnvironmentName,
+        trace_id: str,
+    ) -> bool:
+
+        '''
+        Compute event-journal hash-chain anomaly alert emission for one environment.
+
+        Args:
+        environment (EnvironmentName): Runtime environment value.
+        trace_id (str): Correlation trace identifier.
+
+        Returns:
+        bool: True when alert was emitted, otherwise False.
+        '''
+
+        findings = self._persistence_service.verify_event_chain(environment=environment)
+        if len(findings) == 0:
+            return False
+
+        self.emit_alert_signal(
+            environment=environment,
+            alert_name=HASH_CHAIN_GAP_ANOMALIES_ALERT,
+            severity=SEV1,
+            trace_id=trace_id,
+            job_id=EVENT_CHAIN_SYSTEM_JOB_ID,
+            entity_key=EVENT_CHAIN_SYSTEM_ENTITY_KEY,
+            reason='event_journal_chain_validation_failed',
+            details={
+                'finding_count': len(findings),
+                'findings': findings[:EVENT_CHAIN_FINDING_SAMPLE_LIMIT],
+            },
+        )
+        return True
+
+    def maybe_emit_idempotency_scope_violations(
+        self,
+        environment: EnvironmentName,
+        trace_id: str,
+    ) -> bool:
+
+        '''
+        Compute idempotency-scope violation alert emission for one environment.
+
+        Args:
+        environment (EnvironmentName): Runtime environment value.
+        trace_id (str): Correlation trace identifier.
+
+        Returns:
+        bool: True when alert was emitted, otherwise False.
+        '''
+
+        violations = self._persistence_service.list_idempotency_scope_violations(
+            environment=environment,
+            limit=IDEMPOTENCY_SCOPE_VIOLATION_SAMPLE_LIMIT,
+        )
+        if len(violations) == 0:
+            return False
+
+        self.emit_alert_signal(
+            environment=environment,
+            alert_name=IDEMPOTENCY_SCOPE_VIOLATIONS_ALERT,
+            severity=SEV1,
+            trace_id=trace_id,
+            job_id=IDEMPOTENCY_SYSTEM_JOB_ID,
+            entity_key=IDEMPOTENCY_SYSTEM_ENTITY_KEY,
+            reason='idempotency_scope_violation_detected',
+            details={
+                'violation_count': len(violations),
+                'violations': [
+                    {
+                        'idempotency_key': violation.idempotency_key,
+                        'entry_count': violation.entry_count,
+                        'outbox_ids': violation.outbox_ids,
+                        'scopes': violation.scopes,
+                    }
+                    for violation in violations
+                ],
+            },
+        )
+        return True
+
     def maybe_emit_stop_the_line_threshold_breach(
         self,
         environment: EnvironmentName,
@@ -467,6 +567,8 @@ __all__ = [
     'COMMENT_ROUTING_FAILURES_ALERT',
     'DUPLICATE_SIDE_EFFECT_ANOMALIES_ALERT',
     'ELEVATED_FAILED_TRANSITION_RATES_ALERT',
+    'HASH_CHAIN_GAP_ANOMALIES_ALERT',
+    'IDEMPOTENCY_SCOPE_VIOLATIONS_ALERT',
     'LEASE_VIOLATIONS_ALERT',
     'OUTBOX_BACKLOG_GROWTH_ALERT',
     'STOP_THE_LINE_THRESHOLD_BREACH_ALERT',

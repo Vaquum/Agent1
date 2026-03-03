@@ -67,6 +67,20 @@ class DashboardActionAttemptSummary(BaseModel):
     attempt_completed_at: datetime | None = None
 
 
+class DashboardAnomalySummary(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    timestamp: datetime
+    trace_id: str = Field(min_length=1)
+    job_id: str = Field(min_length=1)
+    entity_key: str = Field(min_length=1)
+    alert_name: str = Field(min_length=1)
+    severity: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+    runbook: str = Field(min_length=1)
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
 class DashboardPageSummary(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
@@ -91,9 +105,11 @@ class DashboardOverviewResponse(BaseModel):
     jobs_page: DashboardPageSummary
     transitions_page: DashboardPageSummary
     events_page: DashboardPageSummary
+    anomalies_page: DashboardPageSummary
     jobs: list[DashboardJobSummary]
     transitions: list[DashboardTransitionSummary]
     events: list[DashboardEventSummary]
+    anomalies: list[DashboardAnomalySummary]
 
 
 class DashboardJobTimelineResponse(BaseModel):
@@ -128,6 +144,7 @@ class StopTheLineAcknowledgeResponse(BaseModel):
 
 __all__ = [
     'DashboardActionAttemptSummary',
+    'DashboardAnomalySummary',
     'DashboardEventSummary',
     'DashboardJobTimelineResponse',
     'DashboardJobSummary',

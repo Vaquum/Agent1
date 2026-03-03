@@ -30,6 +30,18 @@
           "runbook": "docs/Developer/runbooks/stop-the-line-alerts.md",
           "include_trace_id": true,
           "include_job_id": true
+        },
+        {
+          "name": "hash_chain_gap_anomalies",
+          "runbook": "docs/Developer/runbooks/event-journal-chain-validation.md",
+          "include_trace_id": true,
+          "include_job_id": true
+        },
+        {
+          "name": "idempotency_scope_violations",
+          "runbook": "docs/Developer/runbooks/lease-and-idempotency-incidents.md",
+          "include_trace_id": true,
+          "include_job_id": true
         }
       ]
     },

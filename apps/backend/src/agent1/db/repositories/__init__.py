@@ -1,5 +1,6 @@
 __all__ = [
     'action_attempt_repository',
+    'audit_run_repository',
     'comment_target_repository',
     'entity_repository',
     'event_repository',

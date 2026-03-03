@@ -90,6 +90,7 @@ def test_dashboard_service_returns_recent_snapshot(
     assert overview.jobs_page.total == 2
     assert overview.transitions_page.total == 2
     assert overview.events_page.total == 2
+    assert overview.anomalies_page.total == 0
     assert overview.filters.entity_key is None
     assert overview.filters.job_id is None
     assert overview.filters.trace_id is None
@@ -158,9 +159,44 @@ def test_dashboard_service_applies_overview_filters(
     assert overview.transitions[0].job_id == 'job_dashboard_filter_2'
     assert len(overview.events) == 1
     assert overview.events[0].trace_id == 'trc_dashboard_filter_2'
+    assert overview.anomalies_page.total == 0
     assert overview.filters.entity_key == 'Vaquum/Agent1#202'
     assert overview.filters.trace_id == 'trc_dashboard_filter_2'
     assert overview.filters.status == EventStatus.ERROR
+
+
+def test_dashboard_service_exposes_alert_signal_anomalies(
+    session_factory: sessionmaker[Session],
+) -> None:
+    persistence_service = PersistenceService(session_factory=session_factory)
+    persistence_service.create_job(_create_job_record('job_dashboard_anomaly_1', 'Vaquum/Agent1#401'))
+    persistence_service.append_event(
+        AgentEvent(
+            timestamp=datetime.now(timezone.utc),
+            environment=EnvironmentName.DEV,
+            trace_id='trc_dashboard_anomaly_1',
+            job_id='system:event_chain',
+            entity_key='system:event_chain',
+            source=EventSource.POLICY,
+            event_type=EventType.API_CALL,
+            status=EventStatus.ERROR,
+            details={
+                'action': 'emit_alert_signal',
+                'alert_name': 'hash_chain_gap_anomalies',
+                'severity': 'sev1',
+                'reason': 'event_journal_chain_validation_failed',
+                'runbook': 'docs/Developer/runbooks/event-journal-chain-validation.md',
+            },
+        )
+    )
+
+    dashboard_service = DashboardService(session_factory=session_factory)
+    overview = dashboard_service.get_overview(limit=10, offset=0)
+
+    assert overview.anomalies_page.total == 1
+    assert len(overview.anomalies) == 1
+    assert overview.anomalies[0].alert_name == 'hash_chain_gap_anomalies'
+    assert overview.anomalies[0].trace_id == 'trc_dashboard_anomaly_1'
 
 
 def test_dashboard_service_returns_job_timeline(

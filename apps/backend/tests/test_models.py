@@ -22,3 +22,7 @@ def test_metadata_contains_core_tables() -> None:
     assert 'idempotency_schema_version' in outbox_columns
     assert 'idempotency_payload_hash' in outbox_columns
     assert 'idempotency_policy_version_hash' in outbox_columns
+    event_columns = set(Base.metadata.tables['event_journal'].columns.keys())
+    assert 'event_seq' in event_columns
+    assert 'prev_event_hash' in event_columns
+    assert 'payload_hash' in event_columns

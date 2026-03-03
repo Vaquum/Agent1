@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
@@ -12,6 +13,14 @@ from agent1.core.contracts import OutboxStatus
 from agent1.core.services.idempotency_schema import IDEMPOTENCY_DEFAULT_POLICY_VERSION
 from agent1.core.services.idempotency_schema import build_canonical_idempotency_scope
 from agent1.db.models import OutboxEntryModel
+
+
+@dataclass(frozen=True)
+class IdempotencyScopeViolation:
+    idempotency_key: str
+    outbox_ids: list[str]
+    scopes: list[str]
+    entry_count: int
 
 
 def _utc_now() -> datetime:
@@ -421,5 +430,67 @@ class OutboxRepository:
             .count()
         )
 
+    def list_idempotency_scope_violations(
+        self,
+        environment: EnvironmentName,
+        limit: int = 50,
+    ) -> list[IdempotencyScopeViolation]:
 
-__all__ = ['OutboxRepository']
+        '''
+        Create idempotency-scope violation list for one environment.
+
+        Args:
+        environment (EnvironmentName): Runtime environment value.
+        limit (int): Maximum number of violations to return.
+
+        Returns:
+        list[IdempotencyScopeViolation]: Deterministic idempotency-scope violations.
+        '''
+
+        models = (
+            self._session.query(OutboxEntryModel)
+            .filter(OutboxEntryModel.environment == environment)
+            .order_by(OutboxEntryModel.created_at.asc(), OutboxEntryModel.id.asc())
+            .all()
+        )
+        grouped_models: dict[str, list[OutboxEntryModel]] = {}
+        for model in models:
+            grouped_models.setdefault(model.idempotency_key, []).append(model)
+
+        violations: list[IdempotencyScopeViolation] = []
+        for idempotency_key in sorted(grouped_models.keys()):
+            scoped_models = grouped_models[idempotency_key]
+            if len(scoped_models) <= 1:
+                continue
+
+            scope_set: set[str] = set()
+            for scoped_model in scoped_models:
+                scope_value = '|'.join(
+                    [
+                        scoped_model.action_type.value,
+                        scoped_model.target_identity,
+                        scoped_model.idempotency_schema_version or '',
+                        scoped_model.idempotency_payload_hash or '',
+                        scoped_model.idempotency_policy_version_hash or '',
+                    ],
+                )
+                scope_set.add(scope_value)
+
+            if len(scope_set) <= 1:
+                continue
+
+            violations.append(
+                IdempotencyScopeViolation(
+                    idempotency_key=idempotency_key,
+                    outbox_ids=sorted({scoped_model.outbox_id for scoped_model in scoped_models}),
+                    scopes=sorted(scope_set),
+                    entry_count=len(scoped_models),
+                ),
+            )
+            if len(violations) >= limit:
+                break
+
+        return violations
+
+
+__all__ = ['IdempotencyScopeViolation', 'OutboxRepository']

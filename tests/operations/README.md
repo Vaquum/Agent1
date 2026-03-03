@@ -8,3 +8,9 @@ Operational-readiness validation runners.
 - `run.py`: validates rollback-rehearsal evidence log content and required runbook linkage.
 - `run.py`: validates Docker/Render deployment artifacts and deployment environment contract coverage.
 - `release_promotion_gate.py`: evaluates release-promotion preconditions from readiness evidence and policy state.
+- `release_promotion_gate.py`: persists one `audit_runs` snapshot per execution (`audit_type=release_promotion_gate`).
+- `permission_matrix_validation.py`: validates machine-readable permission-matrix coverage and persistence-role entries from policy controls.
+- `protected_mutation_approval_validation.py`: validates protected approval snapshot and audit-trail integrity for policy and guardrail controls.
+- `event_journal_chain_validation.py`: validates tamper-evident event-journal chain integrity and supports chain backfill execution.
+- `workflow_supply_chain_validation.py`: validates immutable action SHA pinning and workflow job-permission policy drift.
+- `dependency_vulnerability_gate.py`: validates python and node dependency vulnerability gates with threshold and exception policy.

@@ -71,6 +71,11 @@ describe('dashboard markup', () => {
         offset: 0,
         total: 1
       },
+      anomalies_page: {
+        limit: 20,
+        offset: 0,
+        total: 1
+      },
       jobs: [
         {
           job_id: 'job_1',
@@ -103,6 +108,19 @@ describe('dashboard markup', () => {
           status: 'ok',
           details: { reason: 'context_refresh' }
         }
+      ],
+      anomalies: [
+        {
+          timestamp: '2026-03-02T20:03:00Z',
+          trace_id: 'trc_anomaly_1',
+          job_id: 'system:event_chain',
+          entity_key: 'system:event_chain',
+          alert_name: 'hash_chain_gap_anomalies',
+          severity: 'sev1',
+          reason: 'event_journal_chain_validation_failed',
+          runbook: 'docs/Developer/runbooks/event-journal-chain-validation.md',
+          details: { finding_count: 1 }
+        }
       ]
     }
 
@@ -114,6 +132,8 @@ describe('dashboard markup', () => {
     expect(markup).toContain('Live snapshot')
     expect(markup).toContain('Filters')
     expect(markup).toContain('Timeline')
+    expect(markup).toContain('Recent Anomalies')
+    expect(markup).toContain('hash_chain_gap_anomalies')
   })
 
   it('renders selected timeline event details and correlated transitions', () => {
@@ -139,6 +159,11 @@ describe('dashboard markup', () => {
         offset: 0,
         total: 1
       },
+      anomalies_page: {
+        limit: 20,
+        offset: 0,
+        total: 0
+      },
       jobs: [
         {
           job_id: 'job_2',
@@ -152,7 +177,8 @@ describe('dashboard markup', () => {
         }
       ],
       transitions: [],
-      events: []
+      events: [],
+      anomalies: []
     }
     const timeline: DashboardJobTimelineResponse = {
       job: {

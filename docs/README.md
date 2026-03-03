@@ -8,6 +8,7 @@ Current operations dashboard capability:
 - Dashboard data source is `GET /dashboard/overview` with optional filters for `entity_key`, `job_id`, `trace_id`, and `status`.
 - Dashboard supports single-job drill-down via `GET /dashboard/jobs/{job_id}/timeline`.
 - Timeline drill-down includes event detail inspection with transition correlation, trace-based pivot filtering, and action-attempt lifecycle visibility.
+- Dashboard overview now includes a dedicated anomaly feed sourced from emitted alert signals.
 - Ingress processing persists deterministic ordering metadata (`source_event_id`, `source_timestamp_or_seq`, `received_at`) and skips stale/out-of-order events without backward lifecycle transitions.
 - Entity metadata is persisted durably in `entities` for stable environment-scoped entity identity.
 - Ingress orchestration ensures entities are created and touched continuously as normalized events are processed.
@@ -15,18 +16,31 @@ Current operations dashboard capability:
 - Concurrent dev/prod isolation scenarios now assert that dev active handles sandbox-marked entities while prod active ignores sandbox scope to prevent duplicate side effects.
 - Mutating GitHub side effects enforce lease-epoch validation to reject stale-owner writes before dispatch.
 - Side-effect attempt lifecycle is persisted in `action_attempts` with `started`, `succeeded`, `failed`, and `aborted` statuses linked to job/outbox scope.
+- Audit run snapshots are scaffolded in `audit_runs` with environment scope, status, timing, and JSON snapshot fields for durability.
+- Audit run persistence now supports append and filtered list APIs for environment-scoped operational snapshots.
 - Deterministic comment routing targets are now durably scaffolded in `comment_targets` with job/outbox linkage.
 - Comment-target replay and idempotency lookups are available via outbox-scope and idempotency-scope persistence APIs.
 - Canonical idempotency key generation now uses deterministic side-effect scope fields with payload/policy hashing (`entity_key`, `action_type`, `target_identity`, `payload_hash`, `policy_version_hash`).
 - Outbox reconciliation now applies schema-component scope filtering (`idempotency_schema_version`, `idempotency_payload_hash`, `idempotency_policy_version_hash`) when available.
 - Watcher runtime state is persisted durably with stale-watcher reclaim, checkpoint restoration, and explicit operator-required escalation for stuck watchers.
 - Runtime alert signals are emitted for lease violations, duplicate side-effect anomalies, comment-routing failures, outbox backlog growth, and elevated failed transition rates.
+- Runtime alert signals now include hash-chain gap anomalies and idempotency scope violations.
 - Critical alert payloads always include `trace_id`, `job_id`, and runbook linkage.
 - Runtime safety policy controls enforce credential-owner preflight checks, read/write credential separation, default-deny GitHub capabilities, and fail-closed policy resolution.
 - Runtime safety policy controls now include an explicit allowlist for permitted git mutation commands.
 - Runtime safety policy controls now include per-environment branch mutation namespace patterns.
+- Runtime safety policy controls now include a machine-readable permission matrix for component/environment least-privilege declarations and persistence-role scopes.
+- Runtime safety policy controls now include a protected mutation approval artifact with hash-locked policy/guardrail snapshots and append-only approval audit trail.
+- Event journal persistence now includes tamper-evident chain fields (`event_seq`, `prev_event_hash`, `payload_hash`) with deterministic per-environment sequencing.
 - Codex runtime execution now blocks explicit disallowed git mutation commands before task dispatch.
 - Codex runtime execution now blocks explicit branch create/push commands that target branch namespaces outside the current environment policy.
+- PR and nightly backend gates now validate permission-matrix control integrity through `tests/operations/permission_matrix_validation.py`.
+- PR and nightly backend gates now validate protected mutation approval integrity through `tests/operations/protected_mutation_approval_validation.py`.
+- PR and nightly backend gates now validate event-journal tamper-evident chain integrity through `tests/operations/event_journal_chain_validation.py`.
+- CI workflows now pin all third-party GitHub Actions to immutable commit SHAs.
+- CI workflows now enforce per-job minimal token permissions with drift validation from `docs/Developer/ci-token-permissions-policy.json`.
+- PR and nightly quality gates now enforce dependency vulnerability checks for python and node using `tests/operations/dependency_vulnerability_gate.py`.
+- Dependency vulnerability threshold and temporary exception policy is defined in `docs/Developer/dependency-vulnerability-policy.json`.
 - Runtime controls define progressive rollout stages with required health signals in machine-readable policy form.
 - Runtime bootstrapping now includes rollout stage-gate evaluation for deployment/runtime control checks.
 - Failed rollout stage gates now trigger deterministic rollback decisions with active-mode downgrade to shadow mode.
@@ -35,6 +49,7 @@ Current operations dashboard capability:
 - Stop-the-line threshold breaches now emit dedicated operational alerts, and operators can persist acknowledgements through `POST /dashboard/alerts/stop-the-line/acknowledge`.
 - Runtime controls define machine-readable release-promotion preconditions linked to operational readiness evidence and policy state.
 - Release workflow path now includes release-promotion precondition gate execution through `tests/operations/release_promotion_gate.py`.
+- Release-promotion gate execution now persists one `audit_runs` snapshot with decision evidence for each gate run.
 - Operator release-promotion gate procedure is documented in `docs/Developer/runbooks/release-promotion-gate.md`.
 - Playwright E2E scaffold is available for dashboard operator flows with CI browser setup and smoke execution.
 - Playwright suite now covers operator overview-filter and timeline drill-down flow using deterministic mocked dashboard APIs.

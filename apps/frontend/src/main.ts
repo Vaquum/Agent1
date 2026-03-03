@@ -30,6 +30,18 @@ export interface DashboardEventSummary {
   details: Record<string, unknown>
 }
 
+export interface DashboardAnomalySummary {
+  timestamp: string
+  trace_id: string
+  job_id: string
+  entity_key: string
+  alert_name: string
+  severity: string
+  reason: string
+  runbook: string
+  details: Record<string, unknown>
+}
+
 export interface DashboardPageSummary {
   limit: number
   offset: number
@@ -48,9 +60,11 @@ export interface DashboardOverviewResponse {
   jobs_page: DashboardPageSummary
   transitions_page: DashboardPageSummary
   events_page: DashboardPageSummary
+  anomalies_page: DashboardPageSummary
   jobs: DashboardJobSummary[]
   transitions: DashboardTransitionSummary[]
   events: DashboardEventSummary[]
+  anomalies: DashboardAnomalySummary[]
 }
 
 export interface DashboardJobTimelineResponse {
@@ -198,12 +212,15 @@ function isDashboardOverviewResponse(payload: unknown): payload is DashboardOver
     Array.isArray(record.jobs) &&
     Array.isArray(record.transitions) &&
     Array.isArray(record.events) &&
+    Array.isArray(record.anomalies) &&
     typeof record.jobs_page === 'object' &&
     record.jobs_page !== null &&
     typeof record.transitions_page === 'object' &&
     record.transitions_page !== null &&
     typeof record.events_page === 'object' &&
     record.events_page !== null &&
+    typeof record.anomalies_page === 'object' &&
+    record.anomalies_page !== null &&
     typeof record.filters === 'object' &&
     record.filters !== null
   )
@@ -427,6 +444,7 @@ export function createDashboardMarkup(state: DashboardRenderState): string {
   const jobs = overview?.jobs ?? []
   const transitions = overview?.transitions ?? []
   const events = overview?.events ?? []
+  const anomalies = overview?.anomalies ?? []
   const jobsRows = createRows(
     jobs.map((job) => (
       `<tr>
@@ -481,10 +499,25 @@ export function createDashboardMarkup(state: DashboardRenderState): string {
     'No events recorded.',
     7
   )
+  const anomalyRows = createRows(
+    anomalies.map((anomaly) => (
+      `<tr>
+        <td>${escapeHtml(formatDateTime(anomaly.timestamp))}</td>
+        <td>${escapeHtml(anomaly.alert_name)}</td>
+        <td>${escapeHtml(anomaly.severity)}</td>
+        <td>${escapeHtml(anomaly.trace_id)}</td>
+        <td>${escapeHtml(anomaly.job_id)}</td>
+        <td>${escapeHtml(anomaly.runbook)}</td>
+      </tr>`
+    )),
+    'No anomalies detected.',
+    6
+  )
   const statusText = state.error_message ?? (state.is_loading ? 'Loading dashboard snapshot...' : 'Live snapshot')
   const jobsTotal = overview?.jobs_page.total ?? 0
   const transitionsTotal = overview?.transitions_page.total ?? 0
   const eventsTotal = overview?.events_page.total ?? 0
+  const anomaliesTotal = overview?.anomalies_page.total ?? 0
 
   return `
     <main class='layout'>
@@ -497,6 +530,7 @@ export function createDashboardMarkup(state: DashboardRenderState): string {
         <article class='metric-card'><h2>Jobs</h2><p>${escapeHtml(String(jobsTotal))}</p></article>
         <article class='metric-card'><h2>Transitions</h2><p>${escapeHtml(String(transitionsTotal))}</p></article>
         <article class='metric-card'><h2>Events</h2><p>${escapeHtml(String(eventsTotal))}</p></article>
+        <article class='metric-card'><h2>Anomalies</h2><p>${escapeHtml(String(anomaliesTotal))}</p></article>
       </section>
       <section class='table-section'>
         <h2>Recent Jobs</h2>
@@ -526,6 +560,16 @@ export function createDashboardMarkup(state: DashboardRenderState): string {
             <tr><th>Timestamp</th><th>Trace</th><th>Job</th><th>Entity</th><th>Source</th><th>Type</th><th>Status</th></tr>
           </thead>
           <tbody>${eventRows}</tbody>
+        </table>
+      </section>
+      <section class='table-section'>
+        <h2>Recent Anomalies</h2>
+        ${overview ? `<p class='status'>Filtered count: ${escapeHtml(String(overview.anomalies_page.total))}</p>` : ''}
+        <table>
+          <thead>
+            <tr><th>Timestamp</th><th>Alert</th><th>Severity</th><th>Trace</th><th>Job</th><th>Runbook</th></tr>
+          </thead>
+          <tbody>${anomalyRows}</tbody>
         </table>
       </section>
       ${createTimelineSectionMarkup(state)}

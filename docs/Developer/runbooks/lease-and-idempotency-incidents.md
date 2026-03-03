@@ -8,6 +8,7 @@ Incident response for lease contention, stale ownership, and duplicate side-effe
 
 - Repeated lease-claim failures for the same `job_id`.
 - Duplicate side-effect attempts for the same idempotency key.
+- Idempotency scope violations for one idempotency key across different targets.
 - Conflicting scope ownership on startup.
 
 ## Immediate Containment
@@ -22,6 +23,8 @@ Incident response for lease contention, stale ownership, and duplicate side-effe
 2. Inspect `jobs` and `job_transitions` for lease-epoch behavior and repeated transitions.
 3. Inspect event journal entries for repeated outbound action intents.
 4. Confirm current scope owner in `runtime_scope_guards`.
+5. Inspect outbox entries for conflicting scopes under one idempotency key:
+   - compare `action_type`, `target_identity`, and schema-component hashes.
 
 ## Remediation
 
@@ -31,7 +34,10 @@ Incident response for lease contention, stale ownership, and duplicate side-effe
 2. Resolve duplicate side-effect risk:
    - verify idempotency key mapping,
    - replay only through idempotent path.
-3. Resume processing in `active` only after stability checks pass.
+3. Resolve idempotency scope violations:
+   - quarantine conflicting outbox entries,
+   - enforce canonical key recomputation for affected write path before replay.
+4. Resume processing in `active` only after stability checks pass.
 
 ## Exit Criteria
 

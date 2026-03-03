@@ -42,6 +42,8 @@ REQUIRED_ALERT_NAMES: tuple[str, ...] = (
     'stop_the_line_threshold_breach',
     'outbox_backlog_growth',
     'elevated_failed_transition_rates',
+    'hash_chain_gap_anomalies',
+    'idempotency_scope_violations',
 )
 INCIDENT_RESPONSE_POLICY_RELATIVE_PATH = 'docs/Developer/incident-response-policy.md'
 REQUIRED_INCIDENT_HEADINGS: tuple[str, ...] = (

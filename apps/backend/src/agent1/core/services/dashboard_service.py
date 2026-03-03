@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker
 
 from agent1.api.dashboard_contracts import DashboardActionAttemptSummary
+from agent1.api.dashboard_contracts import DashboardAnomalySummary
 from agent1.api.dashboard_contracts import DashboardEventSummary
 from agent1.api.dashboard_contracts import DashboardJobTimelineResponse
 from agent1.api.dashboard_contracts import DashboardJobSummary
@@ -137,6 +138,36 @@ def _to_action_attempt_summary(attempt_model: ActionAttemptModel) -> DashboardAc
     )
 
 
+def _to_anomaly_summary(event_model: EventJournalModel) -> DashboardAnomalySummary:
+
+    '''
+    Create dashboard anomaly summary payload from persisted alert-signal event row.
+
+    Args:
+    event_model (EventJournalModel): Persisted event journal row.
+
+    Returns:
+    DashboardAnomalySummary: Dashboard anomaly summary payload.
+    '''
+
+    details = event_model.details
+    alert_name = details.get('alert_name')
+    severity = details.get('severity')
+    reason = details.get('reason')
+    runbook = details.get('runbook')
+    return DashboardAnomalySummary(
+        timestamp=event_model.timestamp,
+        trace_id=event_model.trace_id,
+        job_id=event_model.job_id,
+        entity_key=event_model.entity_key,
+        alert_name=alert_name if isinstance(alert_name, str) and alert_name.strip() != '' else 'unknown_alert',
+        severity=severity if isinstance(severity, str) and severity.strip() != '' else 'unknown_severity',
+        reason=reason if isinstance(reason, str) and reason.strip() != '' else 'unknown_reason',
+        runbook=runbook if isinstance(runbook, str) and runbook.strip() != '' else 'unknown_runbook',
+        details=details,
+    )
+
+
 class DashboardService:
     def __init__(self, session_factory: sessionmaker[Session] | None = None) -> None:
         self._session_factory = session_factory or create_session_factory()
@@ -193,6 +224,13 @@ class DashboardService:
                 trace_id=normalized_trace_id,
                 status=status,
             )
+            anomalies = event_repository.list_recent_anomaly_events(
+                limit=limit,
+                offset=offset,
+                entity_key=normalized_entity_key,
+                job_id=normalized_job_id,
+                trace_id=normalized_trace_id,
+            )
             jobs_total = job_repository.count_jobs(
                 entity_key=normalized_entity_key,
                 job_id=normalized_job_id,
@@ -206,6 +244,11 @@ class DashboardService:
                 job_id=normalized_job_id,
                 trace_id=normalized_trace_id,
                 status=status,
+            )
+            anomalies_total = event_repository.count_anomaly_events(
+                entity_key=normalized_entity_key,
+                job_id=normalized_job_id,
+                trace_id=normalized_trace_id,
             )
             return DashboardOverviewResponse(
                 filters=DashboardOverviewFilters(
@@ -229,12 +272,18 @@ class DashboardService:
                     offset=offset,
                     total=events_total,
                 ),
+                anomalies_page=DashboardPageSummary(
+                    limit=limit,
+                    offset=offset,
+                    total=anomalies_total,
+                ),
                 jobs=[_to_job_summary(job_model) for job_model in jobs],
                 transitions=[
                     _to_transition_summary(transition_model)
                     for transition_model in transitions
                 ],
                 events=[_to_event_summary(event_model) for event_model in events],
+                anomalies=[_to_anomaly_summary(event_model) for event_model in anomalies],
             )
 
     def get_job_timeline(

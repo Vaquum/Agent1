@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime
+from datetime import timezone
 import os
 from pathlib import Path
 import subprocess
 import sys
+from uuid import uuid4
 
 TRUE_VALUES: tuple[str, ...] = ('1', 'true', 'yes', 'on')
 FALSE_VALUES: tuple[str, ...] = ('0', 'false', 'no', 'off')
@@ -87,6 +90,67 @@ def _build_release_promotion_evidence(
     }
 
 
+def _create_release_promotion_audit_run_id() -> str:
+    return f"aud_release_promotion_gate_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{uuid4().hex[:8]}"
+
+
+def _resolve_audit_environment() -> str:
+    return os.getenv('AGENT1_AUDIT_ENVIRONMENT', 'ci').strip().lower()
+
+
+def _append_release_promotion_audit_run(
+    repo_root: Path,
+    started_at: datetime,
+    completed_at: datetime,
+    operational_readiness_return_code: int,
+    evidence: dict[str, bool],
+    required_preconditions: list[str],
+    failed_preconditions: list[str],
+    passed: bool,
+) -> None:
+
+    '''
+    Create persisted audit-run snapshot for one release-promotion gate execution.
+
+    Args:
+    repo_root (Path): Repository root path.
+    started_at (datetime): Gate evaluation start timestamp.
+    completed_at (datetime): Gate evaluation completion timestamp.
+    operational_readiness_return_code (int): Operational-readiness subprocess return code.
+    evidence (dict[str, bool]): Release-promotion evidence payload.
+    required_preconditions (list[str]): Required precondition identifiers from policy.
+    failed_preconditions (list[str]): Failed precondition identifiers from evaluation.
+    passed (bool): Gate pass/fail decision value.
+    '''
+
+    _configure_backend_import_path(repo_root)
+    from agent1.core.contracts import AuditRunRecord
+    from agent1.core.contracts import AuditRunStatus
+    from agent1.core.contracts import EnvironmentName
+    from agent1.core.services.persistence_service import PersistenceService
+
+    status = AuditRunStatus.SUCCEEDED if passed else AuditRunStatus.FAILED
+    audit_environment = EnvironmentName(_resolve_audit_environment())
+    persistence_service = PersistenceService()
+    persistence_service.append_audit_run(
+        AuditRunRecord(
+            audit_run_id=_create_release_promotion_audit_run_id(),
+            environment=audit_environment,
+            audit_type='release_promotion_gate',
+            status=status,
+            started_at=started_at,
+            completed_at=completed_at,
+            snapshot={
+                'decision_passed': passed,
+                'operational_readiness_return_code': operational_readiness_return_code,
+                'required_preconditions': required_preconditions,
+                'failed_preconditions': failed_preconditions,
+                'evidence': evidence,
+            },
+        )
+    )
+
+
 def main() -> int:
 
     '''
@@ -96,6 +160,7 @@ def main() -> int:
     int: Zero when release-promotion preconditions pass, otherwise one.
     '''
 
+    started_at = datetime.now(timezone.utc)
     repo_root = _get_repo_root()
     _configure_backend_import_path(repo_root)
     from agent1.core.control_loader import validate_control_bundle
@@ -115,6 +180,17 @@ def main() -> int:
         release_promotion_policy=control_bundle.runtime.release_promotion_policy,
     )
     decision = gate_service.evaluate(evidence=evidence)
+    completed_at = datetime.now(timezone.utc)
+    _append_release_promotion_audit_run(
+        repo_root=repo_root,
+        started_at=started_at,
+        completed_at=completed_at,
+        operational_readiness_return_code=operational_readiness_result.returncode,
+        evidence=evidence,
+        required_preconditions=decision.required_preconditions,
+        failed_preconditions=decision.failed_preconditions,
+        passed=decision.passed,
+    )
     if decision.passed:
         print('Release promotion gate passed.')
         return 0

@@ -1,0 +1,161 @@
+{
+  "entries": [
+    {
+      "component": "api",
+      "environment": "dev",
+      "permissions": [
+        "control_bundle_read",
+        "dashboard_api_read",
+        "health_check_read"
+      ]
+    },
+    {
+      "component": "api",
+      "environment": "prod",
+      "permissions": [
+        "control_bundle_read",
+        "dashboard_api_read",
+        "health_check_read"
+      ]
+    },
+    {
+      "component": "api",
+      "environment": "ci",
+      "permissions": [
+        "control_bundle_read",
+        "dashboard_api_read",
+        "health_check_read"
+      ]
+    },
+    {
+      "component": "worker",
+      "environment": "dev",
+      "permissions": [
+        "ingress_scan",
+        "job_orchestration",
+        "watcher_lifecycle",
+        "outbox_dispatch",
+        "github_mutation_write"
+      ]
+    },
+    {
+      "component": "worker",
+      "environment": "prod",
+      "permissions": [
+        "ingress_scan",
+        "job_orchestration",
+        "watcher_lifecycle",
+        "outbox_dispatch",
+        "github_mutation_write"
+      ]
+    },
+    {
+      "component": "worker",
+      "environment": "ci",
+      "permissions": [
+        "ingress_scan",
+        "job_orchestration",
+        "watcher_lifecycle",
+        "outbox_dispatch",
+        "github_mutation_write"
+      ]
+    },
+    {
+      "component": "watcher",
+      "environment": "dev",
+      "permissions": [
+        "entity_watch_read",
+        "watcher_heartbeat_write",
+        "watcher_reclaim_write"
+      ]
+    },
+    {
+      "component": "watcher",
+      "environment": "prod",
+      "permissions": [
+        "entity_watch_read",
+        "watcher_heartbeat_write",
+        "watcher_reclaim_write"
+      ]
+    },
+    {
+      "component": "watcher",
+      "environment": "ci",
+      "permissions": [
+        "entity_watch_read",
+        "watcher_heartbeat_write",
+        "watcher_reclaim_write"
+      ]
+    },
+    {
+      "component": "dashboard",
+      "environment": "dev",
+      "permissions": [
+        "event_journal_read",
+        "timeline_read",
+        "trace_pivot_read"
+      ]
+    },
+    {
+      "component": "dashboard",
+      "environment": "prod",
+      "permissions": [
+        "event_journal_read",
+        "timeline_read",
+        "trace_pivot_read"
+      ]
+    },
+    {
+      "component": "dashboard",
+      "environment": "ci",
+      "permissions": [
+        "event_journal_read",
+        "timeline_read",
+        "trace_pivot_read"
+      ]
+    },
+    {
+      "component": "ci",
+      "environment": "dev",
+      "permissions": [
+        "quality_gate_execute",
+        "scenario_gate_execute",
+        "operations_gate_execute"
+      ]
+    },
+    {
+      "component": "ci",
+      "environment": "prod",
+      "permissions": [
+        "quality_gate_execute",
+        "scenario_gate_execute",
+        "operations_gate_execute"
+      ]
+    },
+    {
+      "component": "ci",
+      "environment": "ci",
+      "permissions": [
+        "quality_gate_execute",
+        "scenario_gate_execute",
+        "operations_gate_execute"
+      ]
+    }
+  ],
+  "persistence_roles": {
+    "migrator": [
+      "schema_read",
+      "schema_write",
+      "data_backfill_write"
+    ],
+    "runtime": [
+      "data_read",
+      "data_write",
+      "lease_write"
+    ],
+    "readonly_analytics": [
+      "data_read",
+      "audit_snapshot_read"
+    ]
+  }
+}

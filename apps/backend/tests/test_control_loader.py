@@ -1,9 +1,12 @@
 import json
+import hashlib
 from pathlib import Path
 
 import pytest
 
 from agent1.core.control_loader import CONTROL_FILE_NAME
+from agent1.core.control_loader import POLICY_PERMISSION_MATRIX_FILE_NAME
+from agent1.core.control_loader import POLICY_PROTECTED_APPROVAL_FILE_NAME
 from agent1.core.control_loader import ControlValidationError
 from agent1.core.control_loader import load_control_bundle
 
@@ -11,6 +14,68 @@ from agent1.core.control_loader import load_control_bundle
 def _write_json(path: Path, payload: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload), encoding='utf-8')
+
+
+def _create_permission_matrix_payload() -> dict[str, object]:
+    entries: list[dict[str, object]] = []
+    for component in ['api', 'worker', 'watcher', 'dashboard', 'ci']:
+        for environment in ['dev', 'prod', 'ci']:
+            entries.append(
+                {
+                    'component': component,
+                    'environment': environment,
+                    'permissions': [f'{component}_read', f'{component}_write'],
+                }
+            )
+
+    return {
+        'entries': entries,
+        'persistence_roles': {
+            'migrator': ['schema_read', 'schema_write'],
+            'runtime': ['data_read', 'data_write'],
+            'readonly_analytics': ['data_read'],
+        },
+    }
+
+
+def _sha256_hex(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _create_protected_mutation_approval_payload(root: Path) -> dict[str, object]:
+    protected_relative_paths = (
+        'policies/default.json',
+        'policies/permission-matrix.json',
+        'runtime/default.json',
+    )
+    protected_files = [
+        {
+            'path': relative_path,
+            'sha256': _sha256_hex(root / relative_path),
+        }
+        for relative_path in protected_relative_paths
+    ]
+    return {
+        'version': '0.1.0',
+        'active_snapshot': {
+            'approval_id': 'approval_controls_001',
+            'change_ticket': 'controls-baseline',
+            'approved_by': ['controls-owner'],
+            'approved_at': '2026-03-01T00:00:00Z',
+            'reason': 'Baseline protected approval for policy and guardrail controls.',
+            'protected_files': protected_files,
+        },
+        'audit_trail': [
+            {
+                'event_id': 'approval_controls_001_event_approved',
+                'approval_id': 'approval_controls_001',
+                'decision': 'approved',
+                'recorded_at': '2026-03-01T00:00:00Z',
+                'recorded_by': 'controls-owner',
+                'note': 'Initial protected approval event.',
+            }
+        ],
+    }
 
 
 def _create_valid_controls(root: Path) -> None:
@@ -60,6 +125,10 @@ def _create_valid_controls(root: Path) -> None:
             },
             'rules': [],
         },
+    )
+    _write_json(
+        root / 'policies' / POLICY_PERMISSION_MATRIX_FILE_NAME,
+        _create_permission_matrix_payload(),
     )
     _write_json(
         root / 'styles' / CONTROL_FILE_NAME,
@@ -159,6 +228,10 @@ def _create_valid_controls(root: Path) -> None:
             },
         },
     )
+    _write_json(
+        root / 'policies' / POLICY_PROTECTED_APPROVAL_FILE_NAME,
+        _create_protected_mutation_approval_payload(root),
+    )
 
 
 def test_load_control_bundle_parses_valid_controls(tmp_path: Path) -> None:
@@ -172,6 +245,11 @@ def test_load_control_bundle_parses_valid_controls(tmp_path: Path) -> None:
     assert bundle.policies.agent_actor == 'zero-bang'
     assert bundle.policies.ignored_actor_suffixes == ['[bot]']
     assert bundle.policies.allowed_git_mutation_commands == ['git add', 'git commit', 'git push']
+    assert len(bundle.policies.permission_matrix.entries) == 15
+    assert bundle.policies.permission_matrix.persistence_roles.runtime == ['data_read', 'data_write']
+    assert bundle.policies.protected_mutation_approval.active_snapshot.approval_id == (
+        'approval_controls_001'
+    )
     assert bundle.runtime.rollout_policy.stages[0].stage_id == 'dev_shadow'
     assert bundle.runtime.rollout_policy.stages[1].required_health_signals == [
         'side_effect_success_rate',
@@ -190,6 +268,22 @@ def test_load_control_bundle_parses_valid_controls(tmp_path: Path) -> None:
 def test_load_control_bundle_fails_when_control_file_missing(tmp_path: Path) -> None:
     _create_valid_controls(tmp_path)
     (tmp_path / 'runtime' / CONTROL_FILE_NAME).unlink()
+
+    with pytest.raises(ControlValidationError):
+        load_control_bundle(tmp_path)
+
+
+def test_load_control_bundle_fails_when_permission_matrix_file_missing(tmp_path: Path) -> None:
+    _create_valid_controls(tmp_path)
+    (tmp_path / 'policies' / POLICY_PERMISSION_MATRIX_FILE_NAME).unlink()
+
+    with pytest.raises(ControlValidationError):
+        load_control_bundle(tmp_path)
+
+
+def test_load_control_bundle_fails_when_protected_approval_file_missing(tmp_path: Path) -> None:
+    _create_valid_controls(tmp_path)
+    (tmp_path / 'policies' / POLICY_PROTECTED_APPROVAL_FILE_NAME).unlink()
 
     with pytest.raises(ControlValidationError):
         load_control_bundle(tmp_path)
@@ -231,6 +325,59 @@ def test_load_control_bundle_fails_when_release_promotion_policy_has_duplicate_p
         'operational_readiness_gate_passed'
     )
     runtime_path.write_text(json.dumps(runtime_payload), encoding='utf-8')
+
+    with pytest.raises(ControlValidationError):
+        load_control_bundle(tmp_path)
+
+
+def test_load_control_bundle_fails_when_permission_matrix_is_missing_component_environment_pair(
+    tmp_path: Path,
+) -> None:
+    _create_valid_controls(tmp_path)
+    permission_matrix_path = tmp_path / 'policies' / POLICY_PERMISSION_MATRIX_FILE_NAME
+    permission_matrix_payload = json.loads(permission_matrix_path.read_text(encoding='utf-8'))
+    permission_matrix_payload['entries'] = [
+        entry
+        for entry in permission_matrix_payload['entries']
+        if not (
+            entry.get('component') == 'worker'
+            and entry.get('environment') == 'prod'
+        )
+    ]
+    permission_matrix_path.write_text(json.dumps(permission_matrix_payload), encoding='utf-8')
+
+    with pytest.raises(ControlValidationError):
+        load_control_bundle(tmp_path)
+
+
+def test_load_control_bundle_fails_when_protected_approval_hash_mismatches(tmp_path: Path) -> None:
+    _create_valid_controls(tmp_path)
+    protected_approval_path = tmp_path / 'policies' / POLICY_PROTECTED_APPROVAL_FILE_NAME
+    protected_approval_payload = json.loads(protected_approval_path.read_text(encoding='utf-8'))
+    protected_approval_payload['active_snapshot']['protected_files'][0]['sha256'] = '0' * 64
+    protected_approval_path.write_text(json.dumps(protected_approval_payload), encoding='utf-8')
+
+    with pytest.raises(ControlValidationError):
+        load_control_bundle(tmp_path)
+
+
+def test_load_control_bundle_fails_when_protected_approval_latest_audit_decision_is_revoked(
+    tmp_path: Path,
+) -> None:
+    _create_valid_controls(tmp_path)
+    protected_approval_path = tmp_path / 'policies' / POLICY_PROTECTED_APPROVAL_FILE_NAME
+    protected_approval_payload = json.loads(protected_approval_path.read_text(encoding='utf-8'))
+    protected_approval_payload['audit_trail'].append(
+        {
+            'event_id': 'approval_controls_001_event_revoked',
+            'approval_id': 'approval_controls_001',
+            'decision': 'revoked',
+            'recorded_at': '2026-03-01T00:01:00Z',
+            'recorded_by': 'controls-owner',
+            'note': 'Revoked approval to validate fail-closed behavior.',
+        }
+    )
+    protected_approval_path.write_text(json.dumps(protected_approval_payload), encoding='utf-8')
 
     with pytest.raises(ControlValidationError):
         load_control_bundle(tmp_path)

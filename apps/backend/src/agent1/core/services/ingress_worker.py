@@ -96,6 +96,14 @@ class IngressWorker:
                         environment=self._environment,
                         trace_id=trace_id,
                     )
+                    self._alert_signal_service.maybe_emit_hash_chain_gap_anomalies(
+                        environment=self._environment,
+                        trace_id=trace_id,
+                    )
+                    self._alert_signal_service.maybe_emit_idempotency_scope_violations(
+                        environment=self._environment,
+                        trace_id=trace_id,
+                    )
                     if self._stop_the_line_service is not None:
                         stop_the_line_window_seconds = (
                             self._stop_the_line_service.get_evaluation_window_seconds()

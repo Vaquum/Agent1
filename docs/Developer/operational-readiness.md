@@ -24,6 +24,9 @@
   - `apps/backend/tests/test_trace_context.py`
 - Alert severity ownership and runbook mapping are tracked in:
   - `docs/Developer/alert-routing-matrix.json`
+- Alert anomaly coverage includes:
+  - `hash_chain_gap_anomalies`
+  - `idempotency_scope_violations`
 - CI suites that execute this validation path:
   - `pr-gates` -> `backend-quality`
   - `pr-gates` -> `operational-readiness`
@@ -57,6 +60,30 @@
 - Operational readiness gate enforces:
   - release freeze + exception approval consistency,
   - exception approver and mitigation-plan requirements.
+
+## CI Supply Chain Evidence
+
+- Workflow supply-chain validation source:
+  - `tests/operations/workflow_supply_chain_validation.py`
+- Token-permission drift policy source:
+  - `docs/Developer/ci-token-permissions-policy.json`
+- Dependency vulnerability gate source:
+  - `tests/operations/dependency_vulnerability_gate.py`
+- Dependency vulnerability threshold/exception policy source:
+  - `docs/Developer/dependency-vulnerability-policy.json`
+  - `docs/Developer/dependency-vulnerability-policy.md`
+
+## Event Journal Chain Evidence
+
+- Event-journal chain validation source:
+  - `tests/operations/event_journal_chain_validation.py`
+- Event-journal chain persistence and verification implementation:
+  - `apps/backend/src/agent1/db/repositories/event_repository.py`
+  - `apps/backend/src/agent1/core/services/persistence_service.py`
+- Event-journal schema migration and legacy-row backfill source:
+  - `apps/backend/alembic/versions/20260306_000012_event_journal_chain.py`
+- Operator procedure for chain validation and backfill:
+  - `docs/Developer/runbooks/event-journal-chain-validation.md`
 
 ## Deployment Availability Evidence
 

@@ -11,6 +11,8 @@ from agent1.core.services import persistence_service as persistence_service_modu
 from agent1.core.contracts import AgentEvent
 from agent1.core.contracts import ActionAttemptRecord
 from agent1.core.contracts import ActionAttemptStatus
+from agent1.core.contracts import AuditRunRecord
+from agent1.core.contracts import AuditRunStatus
 from agent1.core.contracts import CommentTargetRecord
 from agent1.core.contracts import CommentTargetType
 from agent1.core.contracts import EntityRecord
@@ -79,8 +81,12 @@ def test_persistence_service_job_and_event_flow(session_factory: sessionmaker[Se
 
     with session_factory() as verification_session:
         event_count = verification_session.query(EventJournalModel).count()
+        persisted_event = verification_session.query(EventJournalModel).one_or_none()
 
     assert event_count == 1
+    assert persisted_event is not None
+    assert persisted_event.event_seq == 1
+    assert persisted_event.payload_hash is not None
 
 
 def test_persistence_service_entity_create_get_list_and_touch(
@@ -123,6 +129,69 @@ def test_persistence_service_entity_create_get_list_and_touch(
     assert len(listed_entities) == 1
     assert touched is True
     assert count == 1
+
+
+def test_persistence_service_append_and_list_audit_runs(
+    session_factory: sessionmaker[Session],
+) -> None:
+    service = PersistenceService(session_factory=session_factory)
+    started_at = datetime(2026, 3, 5, 8, 0, tzinfo=timezone.utc)
+    service.append_audit_run(
+        AuditRunRecord(
+            audit_run_id='audit_run_service_1',
+            environment=EnvironmentName.DEV,
+            audit_type='operational_readiness',
+            status=AuditRunStatus.STARTED,
+            started_at=started_at,
+            completed_at=None,
+            snapshot={'phase': 'start'},
+        ),
+    )
+    service.append_audit_run(
+        AuditRunRecord(
+            audit_run_id='audit_run_service_2',
+            environment=EnvironmentName.DEV,
+            audit_type='operational_readiness',
+            status=AuditRunStatus.SUCCEEDED,
+            started_at=started_at.replace(hour=9),
+            completed_at=started_at.replace(hour=9, minute=5),
+            snapshot={'phase': 'done'},
+        ),
+    )
+    service.append_audit_run(
+        AuditRunRecord(
+            audit_run_id='audit_run_service_3',
+            environment=EnvironmentName.PROD,
+            audit_type='release_promotion_gate',
+            status=AuditRunStatus.FAILED,
+            started_at=started_at.replace(hour=10),
+            completed_at=started_at.replace(hour=10, minute=3),
+            snapshot={'phase': 'failed'},
+        ),
+    )
+
+    listed_dev = service.list_audit_runs(
+        environment=EnvironmentName.DEV,
+        limit=10,
+    )
+    listed_dev_type = service.list_audit_runs(
+        environment=EnvironmentName.DEV,
+        limit=10,
+        audit_type='operational_readiness',
+    )
+    listed_dev_succeeded = service.list_audit_runs(
+        environment=EnvironmentName.DEV,
+        limit=10,
+        status=AuditRunStatus.SUCCEEDED,
+    )
+
+    assert len(listed_dev) == 2
+    assert listed_dev[0].audit_run_id == 'audit_run_service_2'
+    assert listed_dev[1].audit_run_id == 'audit_run_service_1'
+    assert len(listed_dev_type) == 2
+    assert len(listed_dev_succeeded) == 1
+    assert listed_dev_succeeded[0].audit_run_id == 'audit_run_service_2'
+    assert listed_dev_succeeded[0].snapshot == {'phase': 'done'}
 
 
 def test_persistence_service_action_attempt_methods(
@@ -447,3 +516,101 @@ def test_persistence_service_persist_ingress_event_ordering(
     assert event_count == 2
     assert accepted.ordering_decision == IngressOrderingDecision.ACCEPTED
     assert stale.ordering_decision == IngressOrderingDecision.STALE
+
+
+def test_persistence_service_rebuild_and_verify_event_chain(
+    session_factory: sessionmaker[Session],
+) -> None:
+    service = PersistenceService(session_factory=session_factory)
+    event_timestamp = datetime(2026, 3, 6, 15, 0, tzinfo=timezone.utc)
+    service.append_event(
+        AgentEvent(
+            timestamp=event_timestamp,
+            environment=EnvironmentName.DEV,
+            trace_id='trc_chain_service_1',
+            job_id='job_chain_service_1',
+            entity_key='Vaquum/Agent1#6001',
+            source=EventSource.AGENT,
+            event_type=EventType.STATE_TRANSITION,
+            status=EventStatus.OK,
+            details={'message': 'service_chain_first'},
+        )
+    )
+    service.append_event(
+        AgentEvent(
+            timestamp=event_timestamp.replace(minute=1),
+            environment=EnvironmentName.DEV,
+            trace_id='trc_chain_service_2',
+            job_id='job_chain_service_2',
+            entity_key='Vaquum/Agent1#6002',
+            source=EventSource.AGENT,
+            event_type=EventType.STATE_TRANSITION,
+            status=EventStatus.OK,
+            details={'message': 'service_chain_second'},
+        )
+    )
+
+    with session_factory() as tamper_session:
+        tampered_model = (
+            tamper_session.query(EventJournalModel)
+            .filter(EventJournalModel.environment == EnvironmentName.DEV)
+            .filter(EventJournalModel.event_seq == 2)
+            .one()
+        )
+        tampered_model.payload_hash = 'f' * 64
+        tamper_session.commit()
+
+    findings_before_rebuild = service.verify_event_chain(environment=EnvironmentName.DEV)
+    rebuilt_count = service.rebuild_event_chain(environment=EnvironmentName.DEV)
+    findings_after_rebuild = service.verify_event_chain(environment=EnvironmentName.DEV)
+
+    assert len(findings_before_rebuild) >= 1
+    assert rebuilt_count == 2
+    assert findings_after_rebuild == []
+
+
+def test_persistence_service_lists_idempotency_scope_violations(
+    session_factory: sessionmaker[Session],
+) -> None:
+    service = PersistenceService(session_factory=session_factory)
+    created_job = service.create_job(_create_record())
+    service.append_outbox_entry(
+        OutboxWriteRequest(
+            outbox_id='outbox_scope_violation_1',
+            job_id=created_job.job_id,
+            entity_key=created_job.entity_key,
+            environment=created_job.environment,
+            action_type=OutboxActionType.ISSUE_COMMENT,
+            target_identity='Vaquum/Agent1#2:issue',
+            payload={
+                'repository': 'Vaquum/Agent1',
+                'issue_number': 2,
+                'body': 'first',
+            },
+            idempotency_key='idem_scope_violation_service',
+            job_lease_epoch=created_job.lease_epoch,
+        ),
+    )
+    service.append_outbox_entry(
+        OutboxWriteRequest(
+            outbox_id='outbox_scope_violation_2',
+            job_id=created_job.job_id,
+            entity_key=created_job.entity_key,
+            environment=created_job.environment,
+            action_type=OutboxActionType.ISSUE_COMMENT,
+            target_identity='Vaquum/Agent1#2:thread',
+            payload={
+                'repository': 'Vaquum/Agent1',
+                'issue_number': 2,
+                'body': 'second',
+            },
+            idempotency_key='idem_scope_violation_service',
+            job_lease_epoch=created_job.lease_epoch,
+        ),
+    )
+
+    violations = service.list_idempotency_scope_violations(environment=EnvironmentName.DEV)
+
+    assert len(violations) == 1
+    assert violations[0].idempotency_key == 'idem_scope_violation_service'
+    assert violations[0].entry_count == 2

@@ -11,3 +11,7 @@ Operational runbooks for deployment, rollback, migration, and incident response.
 - `stop-the-line-alerts.md`: response to stop-the-line threshold breaches and acknowledgement flow.
 - `release-promotion-gate.md`: release-promotion gate execution and failure handling procedure.
 - `pr-smoke-failures-and-reruns.md`: PR smoke failure policy and rerun procedure.
+- `permission-matrix-validation.md`: response to permission-matrix control validation failures.
+- `protected-mutation-approvals.md`: response to protected policy/guardrail mutation approval failures.
+- `event-journal-chain-validation.md`: response to tamper-evident event-chain validation failures and backfill procedure.
+- `ci-supply-chain-hardening.md`: response to action pinning, token-permission drift, and dependency-gate failures.

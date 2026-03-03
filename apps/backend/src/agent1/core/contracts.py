@@ -70,6 +70,12 @@ class WatcherStatus(str, Enum):
     CLOSED = 'closed'
 
 
+class AuditRunStatus(str, Enum):
+    STARTED = 'started'
+    SUCCEEDED = 'succeeded'
+    FAILED = 'failed'
+
+
 class JobKind(str, Enum):
     ISSUE = 'issue'
     PR_AUTHOR = 'pr_author'
@@ -110,6 +116,9 @@ class AgentEvent(BaseModel):
 
     timestamp: datetime
     environment: EnvironmentName
+    event_seq: int | None = Field(default=None, ge=1)
+    prev_event_hash: str | None = Field(default=None, pattern=r'^[a-f0-9]{64}$')
+    payload_hash: str | None = Field(default=None, pattern=r'^[a-f0-9]{64}$')
     trace_id: str = Field(min_length=1)
     job_id: str = Field(min_length=1)
     entity_key: str = Field(min_length=1)
@@ -254,10 +263,24 @@ class ActionAttemptRecord(BaseModel):
     attempt_completed_at: datetime | None = None
 
 
+class AuditRunRecord(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    audit_run_id: str = Field(min_length=1)
+    environment: EnvironmentName
+    audit_type: str = Field(min_length=1)
+    status: AuditRunStatus
+    started_at: datetime
+    completed_at: datetime | None = None
+    snapshot: dict[str, Any] = Field(default_factory=dict)
+
+
 __all__ = [
     'ActionAttemptRecord',
     'ActionAttemptStatus',
     'AgentEvent',
+    'AuditRunRecord',
+    'AuditRunStatus',
     'CommentTarget',
     'CommentTargetRecord',
     'CommentTargetType',

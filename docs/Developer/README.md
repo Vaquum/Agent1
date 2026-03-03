@@ -9,7 +9,7 @@ This directory contains developer-facing documentation for architecture, workflo
   - `apps/backend/src/agent1/core/control_schemas.py`
   - `apps/backend/src/agent1/core/control_loader.py`
 - Startup is fail-fast on invalid controls through `apps/backend/src/agent1/main.py`.
-- Default control payloads live under `controls/*/default.json`.
+- Default control payloads live under `controls/*/default.json` plus `controls/policies/permission-matrix.json` and `controls/policies/protected-approval.json`.
 - Runtime controls now include machine-readable progressive-rollout stages and required health-signal mappings under `controls/runtime/default.json` (`rollout_policy`).
 - Rollout stage-gate evaluation is implemented under `apps/backend/src/agent1/core/services/rollout_stage_gate.py` and wired into application runtime state.
 - Rollout guard rollback-trigger decisions are implemented under `apps/backend/src/agent1/core/services/rollout_guard_service.py` with active-mode downgrade semantics (`active -> shadow`) on failed stage gates.
@@ -24,6 +24,7 @@ This directory contains developer-facing documentation for architecture, workflo
   - `apps/backend/src/agent1/core/services/dashboard_service.py`
 - Dashboard API supports:
   - `GET /dashboard/overview` with shared section pagination (`limit`, `offset`) and optional filters (`entity_key`, `job_id`, `trace_id`, `status`),
+  - anomaly feed in `GET /dashboard/overview` under `anomalies` / `anomalies_page` sourced from emitted alert signals,
   - `GET /dashboard/jobs/{job_id}/timeline` for per-job transition/event drill-down views.
 - Persistence baseline is defined under:
   - `apps/backend/src/agent1/db/models.py`
@@ -39,9 +40,13 @@ This directory contains developer-facing documentation for architecture, workflo
   - `apps/backend/alembic/versions/20260304_000008_action_attempts.py`
   - `apps/backend/alembic/versions/20260304_000009_comment_targets.py`
   - `apps/backend/alembic/versions/20260305_000010_outbox_idempotency_schema.py`
+  - `apps/backend/alembic/versions/20260305_000011_audit_runs.py`
+  - `apps/backend/alembic/versions/20260306_000012_event_journal_chain.py`
 - Entity durability baseline now includes `entities` as a first-class persisted table keyed by (`environment`, `entity_key`) with repository/type metadata.
 - Action attempt durability baseline now includes `action_attempts` linked to both `jobs` and `outbox_entries` for append-only side-effect attempt history.
 - Comment-target durability baseline now includes `comment_targets` for deterministic routing target persistence linked to both `jobs` and `outbox_entries`, plus replay/idempotency lookup APIs by outbox and idempotency scope.
+- Audit-run durability baseline now includes `audit_runs` snapshot scaffolding with environment scope, run status, timestamps, and JSON snapshot payload.
+- Audit-run repository/service baseline now includes typed append and list APIs with environment/status/type filters.
 - Orchestration baseline is defined under:
   - `apps/backend/src/agent1/core/workflow.py`
   - `apps/backend/src/agent1/core/watcher.py`
@@ -110,9 +115,23 @@ This directory contains developer-facing documentation for architecture, workflo
 - Runtime safety policy enforcement is defined under:
   - `apps/backend/src/agent1/adapters/github/client.py`
   - `apps/backend/src/agent1/core/control_schemas.py`
+  - `controls/policies/permission-matrix.json`
+  - `controls/policies/protected-approval.json`
   - `controls/policies/default.json`
+  - `tests/operations/permission_matrix_validation.py`
+  - `tests/operations/protected_mutation_approval_validation.py`
+  - `tests/operations/event_journal_chain_validation.py`
   - `apps/backend/src/agent1/config/settings.py`
 - Runtime safety guarantees:
+  - machine-readable permission-matrix coverage is loaded from `controls/policies/permission-matrix.json` and merged into policy controls during startup validation,
+  - permission-matrix validation requires one entry for every (`component`, `environment`) pair across `api`/`worker`/`watcher`/`dashboard`/`ci` and `dev`/`prod`/`ci`,
+  - persistence least-privilege role declarations are required in policy controls for `migrator`, `runtime`, and `readonly_analytics`,
+  - protected policy/guardrail mutation approval snapshot is loaded from `controls/policies/protected-approval.json` and enforced at startup with fail-closed hash checks,
+  - protected mutation approval requires exact path coverage for `policies/default.json`, `policies/permission-matrix.json`, and `runtime/default.json`,
+  - protected mutation approval requires an append-only audit trail where the latest decision for the active approval id is `approved`,
+  - event-journal persistence includes tamper-evident chain fields (`event_seq`, `prev_event_hash`, `payload_hash`) with deterministic per-environment ordering,
+  - event-journal append operations compute chain values transactionally and reject missing-chain drift by rebuilding legacy rows before append,
+  - event-journal chain integrity is continuously verifiable through deterministic hash recomputation from persisted event payload fields,
   - mutating GitHub calls perform credential-owner preflight binding against environment policy (`dev`/`prod`/`ci`),
   - read-only scanner operations and mutating operations use separate credentials when split enforcement is enabled,
   - allowed git mutation command allowlist is defined in policy controls for codex-runtime enforcement,
@@ -120,6 +139,9 @@ This directory contains developer-facing documentation for architecture, workflo
   - codex runtime execution blocks explicit git mutation commands that are denied or outside allowlist policy,
   - codex runtime execution blocks explicit branch create/push commands when branch targets are outside configured environment namespace patterns,
   - operator response for codex git policy denials is documented in `docs/Developer/runbooks/git-mutation-policy-denials.md`,
+  - operator response for permission-matrix control failures is documented in `docs/Developer/runbooks/permission-matrix-validation.md`,
+  - operator response for protected mutation approval failures is documented in `docs/Developer/runbooks/protected-mutation-approvals.md`,
+  - operator response for event-journal chain integrity failures is documented in `docs/Developer/runbooks/event-journal-chain-validation.md`,
   - GitHub capability checks are explicit and default-deny by policy,
   - policy resolution fails closed when control loading is missing or invalid.
 - Outbox reliability baseline is defined under:
@@ -143,7 +165,7 @@ This directory contains developer-facing documentation for architecture, workflo
   - `apps/backend/src/agent1/core/orchestrator.py`
   - `apps/backend/src/agent1/core/services/ingress_worker.py`
 - Operational alert-signal guarantees:
-  - alert signals are emitted for lease violations, duplicate side-effect anomalies, comment-routing failures, outbox backlog growth, and elevated failed transition rates,
+  - alert signals are emitted for lease violations, duplicate side-effect anomalies, comment-routing failures, outbox backlog growth, elevated failed transition rates, hash-chain gap anomalies, and idempotency-scope violations,
   - stop-the-line threshold breaches emit dedicated alert signals with deterministic `alert_id`, rollback decision payload, and runbook linkage,
   - operator acknowledgement for stop-the-line alerts is persisted as explicit event-journal records linked to `alert_id`,
   - alert payloads include deterministic runbook linkage and always carry `trace_id` and `job_id`.
@@ -190,6 +212,16 @@ This directory contains developer-facing documentation for architecture, workflo
   - `.github/workflows/pr-gates.yml` (PR quality and environment safety checks)
   - `.github/workflows/nightly-full-suite.yml` (nightly backend and frontend full-suite execution)
   - `.github/workflows/release-promotion-gate.yml` (main-branch release-promotion precondition gate)
+- Permission-matrix validation is enforced in PR and nightly backend quality gates via `tests/operations/permission_matrix_validation.py`.
+- Protected mutation approval validation is enforced in PR and nightly backend quality gates via `tests/operations/protected_mutation_approval_validation.py`.
+- Event-journal chain validation is enforced in PR and nightly backend quality gates via `tests/operations/event_journal_chain_validation.py`.
+- Workflow supply-chain hardening validation is enforced in PR and nightly backend quality gates via `tests/operations/workflow_supply_chain_validation.py`.
+- Dependency vulnerability gates are enforced through `tests/operations/dependency_vulnerability_gate.py` for:
+  - python dependencies in backend quality jobs,
+  - node dependencies in frontend quality jobs.
+- CI token-permission policy source is `docs/Developer/ci-token-permissions-policy.json` and is treated as drift-control source of truth.
+- Dependency vulnerability threshold/exception policy source is `docs/Developer/dependency-vulnerability-policy.json` with operator guidance in `docs/Developer/dependency-vulnerability-policy.md`.
+- Third-party workflow actions are pinned to immutable SHAs across CI workflows.
 - Playwright E2E scaffold is defined under:
   - `apps/frontend/playwright.config.ts`
   - `apps/frontend/tests/e2e/fixtures.ts`
@@ -231,6 +263,7 @@ This directory contains developer-facing documentation for architecture, workflo
   - `.dockerignore` (container build context policy)
   - `render.yaml` (Render service blueprint and release automation wiring)
   - `docs/Developer/deployment-environment-contract.md` (required deployment environment variables)
+- Release-promotion operations execution now appends one persisted `audit_runs` snapshot per gate run with decision evidence payload.
 - Frontend operations dashboard baseline is defined under:
   - `apps/frontend/src/main.ts`
   - `apps/frontend/src/styles.css`

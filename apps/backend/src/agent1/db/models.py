@@ -17,6 +17,7 @@ from sqlalchemy.orm import relationship
 
 from agent1.core.contracts import EnvironmentName
 from agent1.core.contracts import ActionAttemptStatus
+from agent1.core.contracts import AuditRunStatus
 from agent1.core.contracts import CommentTargetType
 from agent1.core.contracts import EntityType
 from agent1.core.contracts import EventSource
@@ -34,6 +35,7 @@ MAX_ID_LENGTH = 120
 MAX_ENTITY_KEY_LENGTH = 255
 MAX_EVENT_TYPE_LENGTH = 80
 MAX_STALE_REASON_LENGTH = 255
+MAX_HASH_LENGTH = 64
 
 
 def _utc_now() -> datetime:
@@ -123,6 +125,13 @@ class EntityModel(Base):
 
 class EventJournalModel(Base):
     __tablename__ = 'event_journal'
+    __table_args__ = (
+        UniqueConstraint(
+            'environment',
+            'event_seq',
+            name='uq_event_journal_environment_event_seq',
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
@@ -137,8 +146,41 @@ class EventJournalModel(Base):
     source: Mapped[EventSource] = mapped_column(Enum(EventSource, native_enum=False), nullable=False)
     event_type: Mapped[EventType] = mapped_column(Enum(EventType, native_enum=False), nullable=False)
     status: Mapped[EventStatus] = mapped_column(Enum(EventStatus, native_enum=False), nullable=False)
+    event_seq: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    prev_event_hash: Mapped[str | None] = mapped_column(String(MAX_HASH_LENGTH), nullable=True, index=True)
+    payload_hash: Mapped[str | None] = mapped_column(String(MAX_HASH_LENGTH), nullable=True, index=True)
     details: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now, nullable=False)
+
+
+class AuditRunModel(Base):
+    __tablename__ = 'audit_runs'
+    __table_args__ = (
+        UniqueConstraint(
+            'environment',
+            'audit_run_id',
+            name='uq_audit_runs_environment_audit_run_id',
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    audit_run_id: Mapped[str] = mapped_column(String(MAX_ID_LENGTH), nullable=False, index=True)
+    environment: Mapped[EnvironmentName] = mapped_column(
+        Enum(EnvironmentName, native_enum=False),
+        nullable=False,
+        index=True,
+    )
+    audit_type: Mapped[str] = mapped_column(String(MAX_EVENT_TYPE_LENGTH), nullable=False, index=True)
+    status: Mapped[AuditRunStatus] = mapped_column(
+        Enum(AuditRunStatus, native_enum=False),
+        nullable=False,
+        index=True,
+    )
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    snapshot: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now, nullable=False)
 
 
 class IngestionCursorModel(Base):
@@ -408,6 +450,7 @@ class WatcherStateModel(Base):
 
 __all__ = [
     'ActionAttemptModel',
+    'AuditRunModel',
     'CommentTargetModel',
     'EntityModel',
     'EventJournalModel',

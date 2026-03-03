@@ -31,6 +31,56 @@ class _FakeResponse:
         return json.dumps(self._payload).encode('utf-8')
 
 
+def _create_permission_matrix_payload() -> dict[str, object]:
+    entries: list[dict[str, object]] = []
+    for component in ['api', 'worker', 'watcher', 'dashboard', 'ci']:
+        for environment in ['dev', 'prod', 'ci']:
+            entries.append(
+                {
+                    'component': component,
+                    'environment': environment,
+                    'permissions': [f'{component}_read', f'{component}_write'],
+                }
+            )
+
+    return {
+        'entries': entries,
+        'persistence_roles': {
+            'migrator': ['schema_read', 'schema_write'],
+            'runtime': ['data_read', 'data_write'],
+            'readonly_analytics': ['data_read'],
+        },
+    }
+
+
+def _create_protected_mutation_approval_payload() -> dict[str, object]:
+    return {
+        'version': '0.1.0',
+        'active_snapshot': {
+            'approval_id': 'approval_ci_001',
+            'change_ticket': 'ci-baseline',
+            'approved_by': ['ci-operator'],
+            'approved_at': '2026-03-01T00:00:00Z',
+            'reason': 'Baseline protected mutation approval payload for policy fixtures.',
+            'protected_files': [
+                {'path': 'policies/default.json', 'sha256': 'a' * 64},
+                {'path': 'policies/permission-matrix.json', 'sha256': 'b' * 64},
+                {'path': 'runtime/default.json', 'sha256': 'c' * 64},
+            ],
+        },
+        'audit_trail': [
+            {
+                'event_id': 'approval_ci_001_event_approved',
+                'approval_id': 'approval_ci_001',
+                'decision': 'approved',
+                'recorded_at': '2026-03-01T00:00:00Z',
+                'recorded_by': 'ci-operator',
+                'note': 'Fixture baseline approval.',
+            }
+        ],
+    }
+
+
 def _create_policies(
     capability_overrides: Mapping[str, bool] | None = None,
     enforce_read_write_credential_split: bool = True,
@@ -62,6 +112,8 @@ def _create_policies(
                 'prod': ['release/*'],
                 'ci': ['sandbox/*', 'ci/*'],
             },
+            'permission_matrix': _create_permission_matrix_payload(),
+            'protected_mutation_approval': _create_protected_mutation_approval_payload(),
             'enforce_read_write_credential_split': enforce_read_write_credential_split,
             'default_deny_github_capabilities': True,
             'fail_closed_policy_resolution': fail_closed_policy_resolution,

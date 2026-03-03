@@ -74,6 +74,8 @@ class _AlertSignalService:
     def __init__(self) -> None:
         self.backlog_checks = 0
         self.failed_transition_checks = 0
+        self.hash_chain_checks = 0
+        self.idempotency_scope_checks = 0
         self.stop_the_line_signal_collection_calls = 0
         self.stop_the_line_alert_calls = 0
 
@@ -91,6 +93,26 @@ class _AlertSignalService:
         assert environment == EnvironmentName.DEV
         assert trace_id != ''
         self.failed_transition_checks += 1
+        return False
+
+    def maybe_emit_hash_chain_gap_anomalies(
+        self,
+        environment: EnvironmentName,
+        trace_id: str,
+    ) -> bool:
+        assert environment == EnvironmentName.DEV
+        assert trace_id != ''
+        self.hash_chain_checks += 1
+        return False
+
+    def maybe_emit_idempotency_scope_violations(
+        self,
+        environment: EnvironmentName,
+        trace_id: str,
+    ) -> bool:
+        assert environment == EnvironmentName.DEV
+        assert trace_id != ''
+        self.idempotency_scope_checks += 1
         return False
 
     def collect_stop_the_line_signal_values(
@@ -195,6 +217,8 @@ def test_ingress_worker_cycle_runs_watcher_and_alert_services() -> None:
     assert watcher_lifecycle_service.track_calls == 1
     assert alert_signal_service.backlog_checks == 1
     assert alert_signal_service.failed_transition_checks == 1
+    assert alert_signal_service.hash_chain_checks == 1
+    assert alert_signal_service.idempotency_scope_checks == 1
 
 
 def test_ingress_worker_cycle_evaluates_and_emits_stop_the_line_alerts() -> None:

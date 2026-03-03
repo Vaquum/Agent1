@@ -20,6 +20,8 @@ from agent1.core.contracts import OutboxWriteRequest
 from agent1.core.contracts import RuntimeMode
 from agent1.core.services.alert_signal_service import COMMENT_ROUTING_FAILURES_ALERT
 from agent1.core.services.alert_signal_service import ELEVATED_FAILED_TRANSITION_RATES_ALERT
+from agent1.core.services.alert_signal_service import HASH_CHAIN_GAP_ANOMALIES_ALERT
+from agent1.core.services.alert_signal_service import IDEMPOTENCY_SCOPE_VIOLATIONS_ALERT
 from agent1.core.services.alert_signal_service import OUTBOX_BACKLOG_GROWTH_ALERT
 from agent1.core.services.alert_signal_service import STOP_THE_LINE_THRESHOLD_BREACH_ALERT
 from agent1.core.services.alert_signal_service import AlertSignalService
@@ -185,6 +187,113 @@ def test_alert_signal_service_emits_stop_the_line_threshold_breach_signal(
     assert rows[-1].details['job_id'] == 'system:stop_the_line'
     assert rows[-1].details['rollback_triggered'] is True
     assert rows[-1].details['runbook'] == 'docs/Developer/runbooks/stop-the-line-alerts.md'
+
+
+def test_alert_signal_service_emits_hash_chain_gap_anomaly_signal(
+    session_factory: sessionmaker[Session],
+) -> None:
+    persistence_service = PersistenceService(session_factory=session_factory)
+    alert_signal_service = AlertSignalService(persistence_service=persistence_service)
+    now = datetime.now(timezone.utc)
+    persistence_service.append_event(
+        AgentEvent(
+            timestamp=now,
+            environment=EnvironmentName.DEV,
+            trace_id='trc_chain_gap_1',
+            job_id='job_chain_gap_1',
+            entity_key='Vaquum/Agent1#995',
+            source=EventSource.AGENT,
+            event_type=EventType.STATE_TRANSITION,
+            status=EventStatus.OK,
+            details={'action': 'transition_job'},
+        ),
+    )
+    persistence_service.append_event(
+        AgentEvent(
+            timestamp=now,
+            environment=EnvironmentName.DEV,
+            trace_id='trc_chain_gap_2',
+            job_id='job_chain_gap_2',
+            entity_key='Vaquum/Agent1#996',
+            source=EventSource.AGENT,
+            event_type=EventType.STATE_TRANSITION,
+            status=EventStatus.OK,
+            details={'action': 'transition_job'},
+        ),
+    )
+
+    with session_factory() as session:
+        tampered_row = (
+            session.query(EventJournalModel)
+            .filter(EventJournalModel.environment == EnvironmentName.DEV)
+            .filter(EventJournalModel.event_seq == 2)
+            .one()
+        )
+        tampered_row.payload_hash = '0' * 64
+        session.commit()
+
+    emitted = alert_signal_service.maybe_emit_hash_chain_gap_anomalies(
+        environment=EnvironmentName.DEV,
+        trace_id='trc_hash_chain_alert',
+    )
+
+    with session_factory() as session:
+        rows = session.query(EventJournalModel).order_by(EventJournalModel.id.asc()).all()
+
+    assert emitted is True
+    assert rows[-1].details['alert_name'] == HASH_CHAIN_GAP_ANOMALIES_ALERT
+    assert rows[-1].details['trace_id'] == 'trc_hash_chain_alert'
+    assert rows[-1].details['job_id'] == 'system:event_chain'
+    assert rows[-1].details['runbook'] == 'docs/Developer/runbooks/event-journal-chain-validation.md'
+
+
+def test_alert_signal_service_emits_idempotency_scope_violation_signal(
+    session_factory: sessionmaker[Session],
+) -> None:
+    persistence_service = PersistenceService(session_factory=session_factory)
+    alert_signal_service = AlertSignalService(persistence_service=persistence_service)
+    persistence_service.create_job(_create_job_record('job_scope_violation_1'))
+    persistence_service.append_outbox_entry(
+        OutboxWriteRequest(
+            outbox_id='outbox_scope_violation_alert_1',
+            job_id='job_scope_violation_1',
+            entity_key='Vaquum/Agent1#980',
+            environment=EnvironmentName.DEV,
+            action_type=OutboxActionType.ISSUE_COMMENT,
+            target_identity='Vaquum/Agent1#980:issue',
+            payload={'repository': 'Vaquum/Agent1', 'issue_number': 980, 'body': 'hello'},
+            idempotency_key='idem_scope_alert_violation',
+            job_lease_epoch=0,
+        ),
+    )
+    persistence_service.append_outbox_entry(
+        OutboxWriteRequest(
+            outbox_id='outbox_scope_violation_alert_2',
+            job_id='job_scope_violation_1',
+            entity_key='Vaquum/Agent1#980',
+            environment=EnvironmentName.DEV,
+            action_type=OutboxActionType.ISSUE_COMMENT,
+            target_identity='Vaquum/Agent1#980:thread',
+            payload={'repository': 'Vaquum/Agent1', 'issue_number': 980, 'body': 'second'},
+            idempotency_key='idem_scope_alert_violation',
+            job_lease_epoch=0,
+        ),
+    )
+
+    emitted = alert_signal_service.maybe_emit_idempotency_scope_violations(
+        environment=EnvironmentName.DEV,
+        trace_id='trc_scope_violation_alert',
+    )
+
+    with session_factory() as session:
+        rows = session.query(EventJournalModel).order_by(EventJournalModel.id.asc()).all()
+
+    assert emitted is True
+    assert rows[-1].details['alert_name'] == IDEMPOTENCY_SCOPE_VIOLATIONS_ALERT
+    assert rows[-1].details['trace_id'] == 'trc_scope_violation_alert'
+    assert rows[-1].details['job_id'] == 'system:idempotency'
+    assert rows[-1].details['runbook'] == 'docs/Developer/runbooks/lease-and-idempotency-incidents.md'
+    assert rows[-1].details['violation_count'] == 1
 
 
 def test_alert_signal_service_records_stop_the_line_acknowledgement(

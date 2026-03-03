@@ -11,9 +11,9 @@ Tracking list of remaining items against `spec.md` acceptance criteria.
 - [x] P1: `action_attempts` slice 1 - add contracts/model + migration linked to job/outbox scopes.
 - [x] P1: `action_attempts` slice 2 - persist dispatcher attempt lifecycle (`started`, `succeeded`, `failed`, `aborted`) with error metadata.
 - [x] P1: `action_attempts` slice 3 - expose attempt timeline queries and add tests + docs.
-- [ ] P3: `audit_runs` slice 1 - add contracts/model + migration for audit run snapshots.
-- [ ] P3: `audit_runs` slice 2 - implement repository/service append + list APIs.
-- [ ] P3: `audit_runs` slice 3 - wire audit execution flow and add tests + docs.
+- [x] P3: `audit_runs` slice 1 - add contracts/model + migration for audit run snapshots.
+- [x] P3: `audit_runs` slice 2 - implement repository/service append + list APIs.
+- [x] P3: `audit_runs` slice 3 - wire audit execution flow and add tests + docs.
 - [x] P1: `comment_targets` slice 1 - add contracts/model + migration for deterministic routing targets.
 - [x] P1: `comment_targets` slice 2 - persist resolved targets from comment routing path.
 - [x] P1: `comment_targets` slice 3 - add replay/idempotency lookup APIs and tests + docs.
@@ -36,33 +36,51 @@ Tracking list of remaining items against `spec.md` acceptance criteria.
 
 - [x] P1: Enforce credential-owner preflight binding for mutating side effects.
 - [x] P1: Split and enforce read-only watcher credentials vs mutating credentials at runtime.
-- [ ] P3: Permission matrix slice 1 - add machine-readable schema and source file under controls.
-- [ ] P3: Permission matrix slice 2 - populate component/environment entries and validate at load time.
-- [ ] P3: Permission matrix slice 3 - add CI validation and operator documentation.
 - [x] P1: Enforce default-deny capability model for GitHub operations.
 - [x] P1: Enforce fail-closed runtime behavior when policy resolution is missing or invalid.
-- [ ] P3: Protected approval slice 1 - define approval artifact/schema for policy and guardrail mutations.
-- [ ] P3: Protected approval slice 2 - enforce approval checks in policy/guardrail update path.
-- [ ] P3: Protected approval slice 3 - persist approval audit trail and add tests + docs.
 - [x] P1: Git allowlist slice 1 - define allowed git mutation commands in execution policy.
 - [x] P1: Git allowlist slice 2 - enforce allowlist in codex runtime execution path.
 - [x] P1: Git allowlist slice 3 - add deny-path tests and runbook guidance.
 - [x] P1: Branch namespace slice 1 - define allowed mutation branch patterns per environment.
 - [x] P1: Branch namespace slice 2 - enforce branch pattern checks before mutation/push.
 - [x] P1: Branch namespace slice 3 - add integration tests for allowed and denied namespaces.
-- [ ] P3: Actions pinning slice 1 - pin all third-party GitHub Actions to immutable SHAs.
-- [ ] P3: Actions pinning slice 2 - add CI check that fails on unpinned Actions.
-- [ ] P3: CI token scope slice 1 - set minimal per-job `permissions` in all workflows.
-- [ ] P3: CI token scope slice 2 - add validation for permission drift in CI.
-- [ ] P3: Dependency gate slice 1 - add dependency vulnerability audit checks for Python and Node.
-- [ ] P3: Dependency gate slice 2 - define severity threshold/exception policy and docs.
-- [ ] P3: Audit chain slice 1 - extend event persistence with `event_seq`, `prev_event_hash`, `payload_hash`.
-- [ ] P3: Audit chain slice 2 - compute and persist chain values transactionally on append.
-- [ ] P3: Audit chain slice 3 - add chain verification command and CI gate.
-- [ ] P3: Audit chain slice 4 - add backfill strategy/tests/docs for existing records.
-- [ ] P3: Anomaly detection slice 1 - detect hash-chain gaps and emit alert signals.
-- [ ] P3: Anomaly detection slice 2 - detect idempotency violations across scopes.
-- [ ] P3: Anomaly detection slice 3 - expose anomalies in dashboard and runbooks.
+
+### Slice b1 - Permission Matrix and Runtime Validation
+
+- [x] P3: Permission matrix slice 1 - add machine-readable schema and source file under controls.
+- [x] P3: Permission matrix slice 2 - populate component/environment entries and validate at load time.
+- [x] P3: Permission matrix slice 3 - add CI validation and operator documentation.
+
+### Slice b2 - Protected Approval for Policy and Guardrail Mutations
+
+- [x] P3: Protected approval slice 1 - define approval artifact/schema for policy and guardrail mutations.
+- [x] P3: Protected approval slice 2 - enforce approval checks in policy/guardrail update path.
+- [x] P3: Protected approval slice 3 - persist approval audit trail and add tests + docs.
+
+### Slice b3 - CI Supply Chain Hardening
+
+- [x] P3: Actions pinning slice 1 - pin all third-party GitHub Actions to immutable SHAs.
+- [x] P3: Actions pinning slice 2 - add CI check that fails on unpinned Actions.
+- [x] P3: CI token scope slice 1 - set minimal per-job `permissions` in all workflows.
+- [x] P3: CI token scope slice 2 - add validation for permission drift in CI.
+- [x] P3: Dependency gate slice 1 - add dependency vulnerability audit checks for Python and Node.
+- [x] P3: Dependency gate slice 2 - define severity threshold/exception policy and docs.
+
+### Slice b4 - Tamper-Evident Audit Chain
+
+- [x] P3: Audit chain slice 1 - extend event persistence with `event_seq`, `prev_event_hash`, `payload_hash`.
+- [x] P3: Audit chain slice 2 - compute and persist chain values transactionally on append.
+- [x] P3: Audit chain slice 3 - add chain verification command and CI gate.
+- [x] P3: Audit chain slice 4 - add backfill strategy/tests/docs for existing records.
+
+### Slice b5 - Audit Anomaly Detection
+
+- [x] P3: Anomaly detection slice 1 - detect hash-chain gaps and emit alert signals.
+- [x] P3: Anomaly detection slice 2 - detect idempotency violations across scopes.
+- [x] P3: Anomaly detection slice 3 - expose anomalies in dashboard and runbooks.
+
+### Slice b6 - Retention and Purge Governance
+
 - [ ] P3: Retention policy slice 1 - define retention matrix for logs, traces, and artifacts.
 - [ ] P3: Retention policy slice 2 - implement purge jobs with dry-run/report mode.
 - [ ] P3: Retention policy slice 3 - add controls + CI checks for retention policy drift.

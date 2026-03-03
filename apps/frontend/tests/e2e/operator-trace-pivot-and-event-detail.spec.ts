@@ -22,6 +22,11 @@ const OVERVIEW_BASE_PAYLOAD = {
     offset: 0,
     total: 2
   },
+  anomalies_page: {
+    limit: 20,
+    offset: 0,
+    total: 0
+  },
   jobs: [
     {
       job_id: 'job_e2e_trace_1',
@@ -64,7 +69,8 @@ const OVERVIEW_BASE_PAYLOAD = {
       status: 'ok',
       details: { reason: 'context_refreshed', note: 'other_trace' }
     }
-  ]
+  ],
+  anomalies: []
 }
 
 const OVERVIEW_TRACE_FILTERED_PAYLOAD = {

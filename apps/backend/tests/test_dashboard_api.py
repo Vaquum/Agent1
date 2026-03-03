@@ -16,6 +16,7 @@ from agent1.api.dashboard import get_alert_signal_service
 from agent1.api.dashboard import get_dashboard_service
 from agent1.api.dashboard import router
 from agent1.api.dashboard_contracts import DashboardActionAttemptSummary
+from agent1.api.dashboard_contracts import DashboardAnomalySummary
 from agent1.api.dashboard_contracts import DashboardEventSummary
 from agent1.api.dashboard_contracts import DashboardJobTimelineResponse
 from agent1.api.dashboard_contracts import DashboardJobSummary
@@ -73,6 +74,7 @@ class _FakeDashboardService:
             jobs_page=DashboardPageSummary(limit=limit, offset=offset, total=1),
             transitions_page=DashboardPageSummary(limit=limit, offset=offset, total=1),
             events_page=DashboardPageSummary(limit=limit, offset=offset, total=1),
+            anomalies_page=DashboardPageSummary(limit=limit, offset=offset, total=1),
             jobs=[
                 DashboardJobSummary(
                     job_id='job_dashboard_api_1',
@@ -104,6 +106,19 @@ class _FakeDashboardService:
                     event_type=EventType.STATE_TRANSITION,
                     status=EventStatus.OK,
                     details={'reason': 'context_refreshed'},
+                )
+            ],
+            anomalies=[
+                DashboardAnomalySummary(
+                    timestamp=now,
+                    trace_id='trc_dashboard_api_1',
+                    job_id='system:event_chain',
+                    entity_key='system:event_chain',
+                    alert_name='hash_chain_gap_anomalies',
+                    severity='sev1',
+                    reason='event_journal_chain_validation_failed',
+                    runbook='docs/Developer/runbooks/event-journal-chain-validation.md',
+                    details={'finding_count': 1},
                 )
             ],
         )
@@ -231,6 +246,7 @@ def test_get_dashboard_overview_uses_dashboard_service() -> None:
     assert len(response.jobs) == 1
     assert len(response.transitions) == 1
     assert len(response.events) == 1
+    assert len(response.anomalies) == 1
     assert response.jobs[0].job_id == 'job_dashboard_api_1'
 
 

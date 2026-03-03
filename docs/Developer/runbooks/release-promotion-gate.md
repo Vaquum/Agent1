@@ -9,6 +9,7 @@ Operator procedure for release-promotion precondition evaluation and gate-failur
 1. Run `python tests/operations/release_promotion_gate.py`.
 2. Confirm output reports `Release promotion gate passed.` before promotion.
 3. If gate fails, capture failed precondition identifiers from output.
+4. Confirm one `audit_runs` snapshot was persisted for the execution (`audit_type=release_promotion_gate`).
 
 ## Failure Response
 

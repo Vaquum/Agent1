@@ -40,3 +40,7 @@ def test_alembic_upgrade_head_creates_core_tables(tmp_path: Path, monkeypatch: M
     assert 'idempotency_schema_version' in outbox_column_names
     assert 'idempotency_payload_hash' in outbox_column_names
     assert 'idempotency_policy_version_hash' in outbox_column_names
+    event_column_names = {column['name'] for column in inspector.get_columns('event_journal')}
+    assert 'event_seq' in event_column_names
+    assert 'prev_event_hash' in event_column_names
+    assert 'payload_hash' in event_column_names

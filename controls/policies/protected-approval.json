@@ -1,0 +1,36 @@
+{
+  "version": "0.1.0",
+  "active_snapshot": {
+    "approval_id": "policy_guardrail_approval_20260301_001",
+    "change_ticket": "controls-baseline-protected-approval",
+    "approved_by": [
+      "mikkokotila"
+    ],
+    "approved_at": "2026-03-01T00:00:00Z",
+    "reason": "Baseline protected approval snapshot for policy and guardrail controls.",
+    "protected_files": [
+      {
+        "path": "policies/default.json",
+        "sha256": "8cada76b83240b32f22112d04348a45e42d28eef01d58a1ab5c84c8827f7e728"
+      },
+      {
+        "path": "policies/permission-matrix.json",
+        "sha256": "82993c116b40dba423781b4b9c6e969253e2f87a2272fa2dd030841fbffd0ec8"
+      },
+      {
+        "path": "runtime/default.json",
+        "sha256": "84ae6ebefa409734bb919d13cbb6f0a3a5945e4729039abebcd4e9ea43780c54"
+      }
+    ]
+  },
+  "audit_trail": [
+    {
+      "event_id": "policy_guardrail_approval_20260301_001_approved",
+      "approval_id": "policy_guardrail_approval_20260301_001",
+      "decision": "approved",
+      "recorded_at": "2026-03-01T00:00:00Z",
+      "recorded_by": "mikkokotila",
+      "note": "Initial protected approval audit event for policy and guardrail control baseline."
+    }
+  ]
+}

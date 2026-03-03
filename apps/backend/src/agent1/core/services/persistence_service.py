@@ -8,6 +8,8 @@ from sqlalchemy.orm import sessionmaker
 from agent1.core.contracts import AgentEvent
 from agent1.core.contracts import ActionAttemptRecord
 from agent1.core.contracts import ActionAttemptStatus
+from agent1.core.contracts import AuditRunRecord
+from agent1.core.contracts import AuditRunStatus
 from agent1.core.contracts import CommentTargetRecord
 from agent1.core.contracts import EntityRecord
 from agent1.core.contracts import EntityType
@@ -24,6 +26,7 @@ from agent1.core.ingress_contracts import PersistedIngressEvent
 from agent1.core.watcher import WatcherState
 from agent1.core.services.structured_event_logger import log_agent_event
 from agent1.db.models import ActionAttemptModel
+from agent1.db.models import AuditRunModel
 from agent1.db.models import CommentTargetModel
 from agent1.db.models import EventJournalModel
 from agent1.db.models import JobModel
@@ -31,12 +34,14 @@ from agent1.db.models import EntityModel
 from agent1.db.models import OutboxEntryModel
 from agent1.db.models import WatcherStateModel
 from agent1.db.repositories.action_attempt_repository import ActionAttemptRepository
+from agent1.db.repositories.audit_run_repository import AuditRunRepository
 from agent1.db.repositories.comment_target_repository import CommentTargetRepository
 from agent1.db.repositories.entity_repository import EntityRepository
 from agent1.db.repositories.event_repository import EventRepository
 from agent1.db.repositories.github_event_repository import GitHubEventRepository
 from agent1.db.repositories.job_repository import JobRepository
 from agent1.db.repositories.outbox_repository import OutboxRepository
+from agent1.db.repositories.outbox_repository import IdempotencyScopeViolation
 from agent1.db.repositories.watcher_repository import WatcherRepository
 from agent1.db.session import create_session_factory
 
@@ -56,6 +61,9 @@ def _to_agent_event(model: EventJournalModel) -> AgentEvent:
     return AgentEvent(
         timestamp=model.timestamp,
         environment=model.environment,
+        event_seq=model.event_seq,
+        prev_event_hash=model.prev_event_hash,
+        payload_hash=model.payload_hash,
         trace_id=model.trace_id,
         job_id=model.job_id,
         entity_key=model.entity_key,
@@ -137,6 +145,29 @@ def _to_action_attempt_record(model: ActionAttemptModel) -> ActionAttemptRecord:
         error_message=model.error_message,
         attempt_started_at=model.attempt_started_at,
         attempt_completed_at=model.attempt_completed_at,
+    )
+
+
+def _to_audit_run_record(model: AuditRunModel) -> AuditRunRecord:
+
+    '''
+    Create typed audit-run contract from persisted audit-run model.
+
+    Args:
+    model (AuditRunModel): Persisted audit-run model row.
+
+    Returns:
+    AuditRunRecord: Typed audit-run contract.
+    '''
+
+    return AuditRunRecord(
+        audit_run_id=model.audit_run_id,
+        environment=model.environment,
+        audit_type=model.audit_type,
+        status=model.status,
+        started_at=model.started_at,
+        completed_at=model.completed_at,
+        snapshot=model.snapshot,
     )
 
 
@@ -382,6 +413,58 @@ class PersistenceService:
             )
             session.commit()
             return touched
+
+    def append_audit_run(self, record: AuditRunRecord) -> AuditRunRecord:
+
+        '''
+        Create persisted audit-run row from typed audit-run contract.
+
+        Args:
+        record (AuditRunRecord): Typed audit-run contract to persist.
+
+        Returns:
+        AuditRunRecord: Persisted typed audit-run contract.
+        '''
+
+        with self._session_factory() as session:
+            repository = AuditRunRepository(session)
+            model = repository.create_audit_run(record)
+            session.commit()
+            return _to_audit_run_record(model)
+
+    def list_audit_runs(
+        self,
+        environment: EnvironmentName,
+        limit: int,
+        offset: int = 0,
+        audit_type: str | None = None,
+        status: AuditRunStatus | None = None,
+    ) -> list[AuditRunRecord]:
+
+        '''
+        Create typed audit-run list for one environment and optional filters.
+
+        Args:
+        environment (EnvironmentName): Runtime environment value.
+        limit (int): Maximum row count to return.
+        offset (int): Pagination offset.
+        audit_type (str | None): Optional audit type filter.
+        status (AuditRunStatus | None): Optional audit-run status filter.
+
+        Returns:
+        list[AuditRunRecord]: Ordered typed audit-run rows.
+        '''
+
+        with self._session_factory() as session:
+            repository = AuditRunRepository(session)
+            models = repository.list_audit_runs(
+                environment=environment,
+                limit=limit,
+                offset=offset,
+                audit_type=audit_type,
+                status=status,
+            )
+            return [_to_audit_run_record(model) for model in models]
 
     def append_comment_target(self, record: CommentTargetRecord) -> CommentTargetRecord:
 
@@ -848,9 +931,43 @@ class PersistenceService:
 
         with self._session_factory() as session:
             repository = EventRepository(session)
-            repository.append_event(event)
+            model = repository.append_event(event)
             session.commit()
-            log_agent_event(event)
+            log_agent_event(_to_agent_event(model))
+
+    def rebuild_event_chain(self, environment: EnvironmentName | None = None) -> int:
+
+        '''
+        Create deterministic event-chain values for existing journal rows.
+
+        Args:
+        environment (EnvironmentName | None): Optional environment filter.
+
+        Returns:
+        int: Number of rebuilt event-journal rows.
+        '''
+
+        with self._session_factory() as session:
+            repository = EventRepository(session)
+            rebuilt_count = repository.rebuild_event_chain(environment=environment)
+            session.commit()
+            return rebuilt_count
+
+    def verify_event_chain(self, environment: EnvironmentName | None = None) -> list[str]:
+
+        '''
+        Create tamper-evident chain verification findings for journal rows.
+
+        Args:
+        environment (EnvironmentName | None): Optional environment filter.
+
+        Returns:
+        list[str]: Human-readable chain verification findings.
+        '''
+
+        with self._session_factory() as session:
+            repository = EventRepository(session)
+            return repository.verify_event_chain(environment=environment)
 
     def append_outbox_entry(self, request: OutboxWriteRequest) -> OutboxRecord:
 
@@ -1110,6 +1227,30 @@ class PersistenceService:
         with self._session_factory() as session:
             repository = OutboxRepository(session)
             return repository.count_backlog_entries()
+
+    def list_idempotency_scope_violations(
+        self,
+        environment: EnvironmentName,
+        limit: int = 50,
+    ) -> list[IdempotencyScopeViolation]:
+
+        '''
+        Create idempotency-scope violation list for one environment.
+
+        Args:
+        environment (EnvironmentName): Runtime environment value.
+        limit (int): Maximum number of violations to return.
+
+        Returns:
+        list[IdempotencyScopeViolation]: Deterministic idempotency-scope violations.
+        '''
+
+        with self._session_factory() as session:
+            repository = OutboxRepository(session)
+            return repository.list_idempotency_scope_violations(
+                environment=environment,
+                limit=limit,
+            )
 
     def count_recent_failed_transition_events(self, window_start: datetime) -> int:
 
