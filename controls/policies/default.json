@@ -14,6 +14,23 @@
     "git reset --hard",
     "git clean -fdx"
   ],
+  "enforce_read_write_credential_split": true,
+  "default_deny_github_capabilities": true,
+  "fail_closed_policy_resolution": true,
+  "mutating_credential_owner_by_environment": {
+    "dev": "zero-bang",
+    "prod": "zero-bang",
+    "ci": "zero-bang"
+  },
+  "github_capabilities": {
+    "read_notifications": true,
+    "read_pr_timeline": true,
+    "read_pr_check_runs": true,
+    "read_issue": true,
+    "read_pull_request": true,
+    "write_issue_comment": true,
+    "write_pr_review_reply": true
+  },
   "rules": [
     {
       "id": "no-destructive-git",

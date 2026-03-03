@@ -6,3 +6,4 @@ Operational-readiness validation runners.
 - `run.py`: validates alert-routing severity/runbook matrix integrity and required alert coverage.
 - `run.py`: validates incident lifecycle policy coverage and release-freeze exception enforcement artifacts.
 - `run.py`: validates rollback-rehearsal evidence log content and required runbook linkage.
+- `run.py`: validates Docker/Render deployment artifacts and deployment environment contract coverage.

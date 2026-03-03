@@ -15,8 +15,11 @@ from agent1.core.contracts import JobState
 from agent1.core.contracts import RuntimeMode
 from agent1.core.ingress_contracts import NormalizedIngressEvent
 from agent1.core.orchestrator import JobOrchestrator
+from agent1.core.services.alert_signal_service import COMMENT_ROUTING_FAILURES_ALERT
+from agent1.core.services.alert_signal_service import LEASE_VIOLATIONS_ALERT
 from agent1.core.services.mention_action_executor import MentionActionExecutor
 from agent1.core.services.persistence_service import PersistenceService
+from agent1.db.models import EventJournalModel
 
 
 def _create_record(job_id: str) -> JobRecord:
@@ -690,10 +693,18 @@ def test_mention_action_executor_blocks_on_missing_review_thread_metadata(
         current_job=created,
         orchestrator=orchestrator,
     )
+    with session_factory() as verification_session:
+        alert_events = [
+            event
+            for event in verification_session.query(EventJournalModel).all()
+            if event.details.get('alert_name') == COMMENT_ROUTING_FAILURES_ALERT
+        ]
 
     assert len(fake_client.thread_reply_calls) == 0
     assert len(fake_client.comment_calls) == 0
     assert updated.state == JobState.BLOCKED
+    assert len(alert_events) == 1
+    assert alert_events[0].details['runbook'] == 'docs/Developer/runbooks/review-thread-routing-failures.md'
 
 
 def test_mention_action_executor_posts_clarification_for_insufficient_assignment(
@@ -728,3 +739,37 @@ def test_mention_action_executor_posts_clarification_for_insufficient_assignment
     assert len(fake_client.comment_calls) == 1
     assert fake_client.comment_calls[0]['body'] == 'Need clarification for Vaquum/Agent1#25'
     assert updated.state == JobState.BLOCKED
+
+
+def test_mention_action_executor_rejects_stale_lease_mutating_write(
+    session_factory: sessionmaker[Session],
+) -> None:
+    persistence_service = PersistenceService(session_factory=session_factory)
+    orchestrator = JobOrchestrator(persistence_service=persistence_service)
+    created = orchestrator.create_job(_create_record('Vaquum_Agent1#25:issue'), trace_id='trc_create')
+    orchestrator.claim_job(created.job_id, trace_id='trc_claim')
+    fake_client = _FakeGitHubClient()
+    executor = MentionActionExecutor(
+        response_template='Ack {entity_key}',
+        clarification_template='Need clarification for {entity_key}',
+        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
+        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
+        github_client=fake_client,
+    )
+
+    updated = executor.execute_for_event(
+        normalized_event=_create_normalized_event('issue_mention'),
+        current_job=created,
+        orchestrator=orchestrator,
+    )
+    with session_factory() as verification_session:
+        alert_events = [
+            event
+            for event in verification_session.query(EventJournalModel).all()
+            if event.details.get('alert_name') == LEASE_VIOLATIONS_ALERT
+        ]
+
+    assert len(fake_client.comment_calls) == 0
+    assert updated.lease_epoch == 1
+    assert updated.state == JobState.READY_TO_EXECUTE
+    assert len(alert_events) == 1

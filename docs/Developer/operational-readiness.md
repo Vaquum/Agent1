@@ -57,3 +57,17 @@
 - Operational readiness gate enforces:
   - release freeze + exception approval consistency,
   - exception approver and mitigation-plan requirements.
+
+## Deployment Availability Evidence
+
+- Docker deployment artifacts:
+  - `apps/backend/Dockerfile`
+  - `apps/backend/docker/entrypoint.sh`
+  - `apps/frontend/Dockerfile`
+  - `.dockerignore`
+- Render deployment blueprint:
+  - `render.yaml`
+- Deployment environment contract:
+  - `docs/Developer/deployment-environment-contract.md`
+- Migration release automation:
+  - backend Render `preDeployCommand` executes `alembic upgrade head`.

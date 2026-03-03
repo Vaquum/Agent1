@@ -24,6 +24,10 @@ def test_create_application_sets_runtime_ingress_coordinator() -> None:
     assert isinstance(application.state.sentry_enabled, bool)
     assert isinstance(application.state.otel_enabled, bool)
     assert application.state.trace_header_name == TRACE_HEADER_NAME
-    route_paths = {route.path for route in application.routes}
+    route_paths = {
+        path
+        for path in (getattr(route, 'path', None) for route in application.routes)
+        if isinstance(path, str)
+    }
     assert '/dashboard/overview' in route_paths
     assert '/dashboard/jobs/{job_id}/timeline' in route_paths

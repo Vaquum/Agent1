@@ -15,5 +15,6 @@ This repository is organized as a pnpm workspace with Turborepo orchestration:
 - `docs/Developer/incident-response-policy.md`: incident lifecycle and corrective-action contract.
 - `docs/Developer/release-control.json`: release freeze and exception control contract.
 - `docs/Developer/rollback-rehearsal-log.md`: rollback rehearsal evidence log.
+- `render.yaml`: Docker-on-Render deployment blueprint.
 
 Canonical architecture and behavior contract: `spec.md`.

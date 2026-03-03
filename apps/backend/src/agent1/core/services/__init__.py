@@ -1,14 +1,17 @@
 __all__ = [
+    'alert_signal_service',
     'comment_router',
     'codex_executor',
     'dashboard_service',
     'ingress_cursor_store',
     'ingress_worker',
     'mention_action_executor',
+    'outbox_dispatcher',
     'persistence_service',
     'runtime_scope_guard',
     'sentry_runtime',
     'structured_event_logger',
     'telemetry_runtime',
     'trace_context',
+    'watcher_lifecycle_service',
 ]

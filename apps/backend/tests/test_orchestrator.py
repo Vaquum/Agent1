@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime
+from datetime import timezone
+
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker
 
@@ -9,7 +12,14 @@ from agent1.core.contracts import EnvironmentName
 from agent1.core.contracts import JobKind
 from agent1.core.contracts import JobRecord
 from agent1.core.contracts import JobState
+from agent1.core.contracts import OutboxActionType
+from agent1.core.contracts import OutboxStatus
+from agent1.core.contracts import OutboxWriteRequest
 from agent1.core.contracts import RuntimeMode
+from agent1.core.ingress_contracts import GitHubIngressEvent
+from agent1.core.ingress_contracts import IngressEntityType
+from agent1.core.ingress_contracts import IngressEventType
+from agent1.core.ingress_contracts import IngressOrderingDecision
 from agent1.core.orchestrator import JobOrchestrator
 from agent1.core.services.persistence_service import PersistenceService
 
@@ -71,3 +81,81 @@ def test_orchestrator_rejects_invalid_transition(session_factory: sessionmaker[S
             reason='invalid_after_complete',
             trace_id='trc_orch_2',
         )
+
+
+def test_orchestrator_transition_with_outbox(session_factory: sessionmaker[Session]) -> None:
+    persistence_service = PersistenceService(session_factory=session_factory)
+    orchestrator = JobOrchestrator(persistence_service=persistence_service)
+
+    created = orchestrator.create_job(_create_record('job_orch_3'), trace_id='trc_orch_3')
+    ready = orchestrator.transition_job(
+        created.job_id,
+        to_state=JobState.READY_TO_EXECUTE,
+        reason='context_sufficient',
+        trace_id='trc_orch_3',
+    )
+    transitioned, outbox_records = orchestrator.transition_job_with_outbox(
+        ready.job_id,
+        to_state=JobState.EXECUTING,
+        reason='mention_action_started',
+        trace_id='trc_orch_3',
+        outbox_requests=[
+            OutboxWriteRequest(
+                outbox_id='outbox_orch_1',
+                job_id=ready.job_id,
+                entity_key=ready.entity_key,
+                environment=ready.environment,
+                action_type=OutboxActionType.ISSUE_COMMENT,
+                target_identity='Vaquum/Agent1#11:issue',
+                payload={
+                    'repository': 'Vaquum/Agent1',
+                    'issue_number': 11,
+                    'body': 'outbox orchestrated',
+                },
+                idempotency_key='orch_outbox_idem_1',
+                job_lease_epoch=ready.lease_epoch,
+            ),
+        ],
+    )
+
+    assert transitioned.state == JobState.EXECUTING
+    assert len(outbox_records) == 1
+    assert outbox_records[0].status == OutboxStatus.PENDING
+
+
+def test_orchestrator_persist_ingress_event_and_validate_mutating_lease(
+    session_factory: sessionmaker[Session],
+) -> None:
+    persistence_service = PersistenceService(session_factory=session_factory)
+    orchestrator = JobOrchestrator(persistence_service=persistence_service)
+    created = orchestrator.create_job(_create_record('job_orch_4'), trace_id='trc_orch_4')
+    ingress_event = GitHubIngressEvent(
+        event_id='evt_orch_ingress_1',
+        repository='Vaquum/Agent1',
+        entity_number=11,
+        entity_type=IngressEntityType.ISSUE,
+        actor='mikkokotila',
+        event_type=IngressEventType.ISSUE_MENTION,
+        timestamp=datetime.now(timezone.utc),
+        details={},
+    )
+
+    persisted_ingress_event = orchestrator.persist_ingress_event(
+        ingress_event=ingress_event,
+        environment=EnvironmentName.DEV,
+    )
+    valid_before_claim = orchestrator.validate_mutating_lease(
+        created.job_id,
+        expected_lease_epoch=0,
+        trace_id='trc_orch_4',
+    )
+    orchestrator.claim_job(created.job_id, trace_id='trc_orch_4')
+    stale_after_claim = orchestrator.validate_mutating_lease(
+        created.job_id,
+        expected_lease_epoch=0,
+        trace_id='trc_orch_4',
+    )
+
+    assert persisted_ingress_event.ordering_decision == IngressOrderingDecision.ACCEPTED
+    assert valid_before_claim is True
+    assert stale_after_claim is False

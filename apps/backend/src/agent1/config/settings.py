@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     github_api_url: str = 'https://api.github.com'
     github_user: str = 'zero-bang'
     github_token: str = ''
+    github_read_token: str = ''
+    github_write_token: str = ''
     github_http_timeout_seconds: int = 30
     codex_cli_command: str = 'codex'
     codex_cli_timeout_seconds: int = 900

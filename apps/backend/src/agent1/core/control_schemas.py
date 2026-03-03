@@ -31,6 +31,26 @@ class PolicyRule(BaseModel):
     allow: bool
 
 
+class MutatingCredentialOwnerByEnvironment(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    dev: str = Field(min_length=1)
+    prod: str = Field(min_length=1)
+    ci: str = Field(min_length=1)
+
+
+class GitHubCapabilities(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    read_notifications: bool
+    read_pr_timeline: bool
+    read_pr_check_runs: bool
+    read_issue: bool
+    read_pull_request: bool
+    write_issue_comment: bool
+    write_pr_review_reply: bool
+
+
 class PoliciesControl(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
@@ -40,6 +60,11 @@ class PoliciesControl(BaseModel):
     ignored_actors: list[str] = Field(default_factory=list)
     ignored_actor_suffixes: list[str] = Field(default_factory=lambda: ['[bot]'])
     deny_git_commands: list[str] = Field(default_factory=list)
+    enforce_read_write_credential_split: bool
+    default_deny_github_capabilities: bool
+    fail_closed_policy_resolution: bool
+    mutating_credential_owner_by_environment: MutatingCredentialOwnerByEnvironment
+    github_capabilities: GitHubCapabilities
     rules: list[PolicyRule] = Field(default_factory=list)
 
 
@@ -102,7 +127,9 @@ class ControlBundle(BaseModel):
 __all__ = [
     'CommentingControl',
     'ControlBundle',
+    'GitHubCapabilities',
     'JobsControl',
+    'MutatingCredentialOwnerByEnvironment',
     'PoliciesControl',
     'PromptsControl',
     'RuntimeControl',

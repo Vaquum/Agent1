@@ -200,6 +200,23 @@ class MentionActionExecutor:
 
         return execution_result.status
 
+    def _validate_mutating_lease(
+        self,
+        normalized_event: NormalizedIngressEvent,
+        current_job: JobRecord,
+        orchestrator: JobOrchestrator,
+    ) -> tuple[JobRecord, bool]:
+        lease_valid = orchestrator.validate_mutating_lease(
+            job_id=current_job.job_id,
+            expected_lease_epoch=current_job.lease_epoch,
+            trace_id=normalized_event.trace_id,
+        )
+        latest_job = orchestrator.get_job(current_job.job_id)
+        if latest_job is None:
+            return current_job, lease_valid
+
+        return latest_job, lease_valid
+
     def _execute_no_write_event(
         self,
         normalized_event: NormalizedIngressEvent,
@@ -276,6 +293,14 @@ class MentionActionExecutor:
                 )
 
             if current_job.state == JobState.AWAITING_CONTEXT and _is_clarification_event(normalized_event):
+                current_job, lease_valid = self._validate_mutating_lease(
+                    normalized_event=normalized_event,
+                    current_job=current_job,
+                    orchestrator=orchestrator,
+                )
+                if lease_valid is False:
+                    return current_job
+
                 clarification_body = self._render_clarification_body(normalized_event)
                 try:
                     self._github_client.post_issue_comment(
@@ -301,6 +326,14 @@ class MentionActionExecutor:
             if current_job.state != JobState.READY_TO_EXECUTE:
                 return current_job
             if _is_reviewer_event(normalized_event, current_job):
+                current_job, lease_valid = self._validate_mutating_lease(
+                    normalized_event=normalized_event,
+                    current_job=current_job,
+                    orchestrator=orchestrator,
+                )
+                if lease_valid is False:
+                    return current_job
+
                 reviewer_body = self._render_reviewer_follow_up_body(normalized_event)
                 try:
                     self._github_client.post_issue_comment(
@@ -345,10 +378,25 @@ class MentionActionExecutor:
                         trace_id=normalized_event.trace_id,
                     )
 
+                current_job, lease_valid = self._validate_mutating_lease(
+                    normalized_event=normalized_event,
+                    current_job=current_job,
+                    orchestrator=orchestrator,
+                )
+                if lease_valid is False:
+                    return current_job
+
                 author_comment_body = self._render_author_follow_up_body(normalized_event)
                 try:
                     comment_target = self._comment_router.route(normalized_event)
-                except CommentRoutingError:
+                except CommentRoutingError as error:
+                    orchestrator.emit_comment_routing_failure_alert(
+                        environment=current_job.environment,
+                        trace_id=normalized_event.trace_id,
+                        job_id=current_job.job_id,
+                        entity_key=current_job.entity_key,
+                        error_message=str(error),
+                    )
                     return orchestrator.transition_job(
                         current_job.job_id,
                         to_state=JobState.BLOCKED,
@@ -409,6 +457,14 @@ class MentionActionExecutor:
                         trace_id=normalized_event.trace_id,
                     )
 
+                current_job, lease_valid = self._validate_mutating_lease(
+                    normalized_event=normalized_event,
+                    current_job=current_job,
+                    orchestrator=orchestrator,
+                )
+                if lease_valid is False:
+                    return current_job
+
                 author_ci_body = self._render_author_follow_up_body(normalized_event)
                 try:
                     self._github_client.post_issue_comment(
@@ -442,13 +498,28 @@ class MentionActionExecutor:
 
             try:
                 comment_target = self._comment_router.route(normalized_event)
-            except CommentRoutingError:
+            except CommentRoutingError as error:
+                orchestrator.emit_comment_routing_failure_alert(
+                    environment=current_job.environment,
+                    trace_id=normalized_event.trace_id,
+                    job_id=current_job.job_id,
+                    entity_key=current_job.entity_key,
+                    error_message=str(error),
+                )
                 return orchestrator.transition_job(
                     current_job.job_id,
                     to_state=JobState.BLOCKED,
                     reason=COMMENT_ROUTE_FAILED_REASON,
                     trace_id=normalized_event.trace_id,
                 )
+
+            current_job, lease_valid = self._validate_mutating_lease(
+                normalized_event=normalized_event,
+                current_job=current_job,
+                orchestrator=orchestrator,
+            )
+            if lease_valid is False:
+                return current_job
 
             comment_body = self._render_comment_body(normalized_event)
             try:

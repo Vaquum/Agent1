@@ -35,6 +35,23 @@ def _create_valid_controls(root: Path) -> None:
             'ignored_actors': [],
             'ignored_actor_suffixes': ['[bot]'],
             'deny_git_commands': ['git push --force'],
+            'enforce_read_write_credential_split': True,
+            'default_deny_github_capabilities': True,
+            'fail_closed_policy_resolution': True,
+            'mutating_credential_owner_by_environment': {
+                'dev': 'zero-bang',
+                'prod': 'zero-bang',
+                'ci': 'zero-bang',
+            },
+            'github_capabilities': {
+                'read_notifications': True,
+                'read_pr_timeline': True,
+                'read_pr_check_runs': True,
+                'read_issue': True,
+                'read_pull_request': True,
+                'write_issue_comment': True,
+                'write_pr_review_reply': True,
+            },
             'rules': [],
         },
     )

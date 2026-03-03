@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime
 from datetime import timezone
+from typing import Any
+from typing import cast
 
 from fastapi import FastAPI
 from fastapi import HTTPException
@@ -153,7 +155,11 @@ class _FakeDashboardService:
 def test_dashboard_router_exposes_overview_path() -> None:
     application = FastAPI()
     application.include_router(router)
-    route_paths = {route.path for route in application.routes}
+    route_paths = {
+        path
+        for path in (getattr(route, 'path', None) for route in application.routes)
+        if isinstance(path, str)
+    }
 
     assert '/dashboard/overview' in route_paths
     assert '/dashboard/jobs/{job_id}/timeline' in route_paths
@@ -169,7 +175,7 @@ def test_get_dashboard_overview_uses_dashboard_service() -> None:
         job_id='job_dashboard_api_1',
         trace_id='trc_dashboard_api_1',
         status=EventStatus.OK,
-        dashboard_service=fake_service,
+        dashboard_service=cast(Any, fake_service),
     )
 
     assert fake_service.received_limit == 7
@@ -191,7 +197,7 @@ def test_get_dashboard_job_timeline_uses_dashboard_service() -> None:
         job_id='job_dashboard_api_1',
         limit=9,
         offset=3,
-        dashboard_service=fake_service,
+        dashboard_service=cast(Any, fake_service),
     )
 
     assert fake_service.received_timeline_job_id == 'job_dashboard_api_1'
@@ -210,7 +216,7 @@ def test_get_dashboard_job_timeline_raises_not_found() -> None:
             job_id='missing_job',
             limit=9,
             offset=0,
-            dashboard_service=fake_service,
+            dashboard_service=cast(Any, fake_service),
         )
 
     assert error.value.status_code == 404

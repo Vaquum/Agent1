@@ -43,6 +43,26 @@ class EventStatus(str, Enum):
     ERROR = 'error'
 
 
+class OutboxActionType(str, Enum):
+    ISSUE_COMMENT = 'issue_comment'
+    PR_REVIEW_REPLY = 'pr_review_reply'
+
+
+class OutboxStatus(str, Enum):
+    PENDING = 'pending'
+    SENT = 'sent'
+    CONFIRMED = 'confirmed'
+    FAILED = 'failed'
+    ABORTED = 'aborted'
+
+
+class WatcherStatus(str, Enum):
+    ACTIVE = 'active'
+    RECLAIMED = 'reclaimed'
+    OPERATOR_REQUIRED = 'operator_required'
+    CLOSED = 'closed'
+
+
 class JobKind(str, Enum):
     ISSUE = 'issue'
     PR_AUTHOR = 'pr_author'
@@ -132,6 +152,41 @@ class CommentTarget(BaseModel):
     side: str | None = None
 
 
+class OutboxRecord(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    outbox_id: str = Field(min_length=1)
+    job_id: str = Field(min_length=1)
+    entity_key: str = Field(min_length=1)
+    environment: EnvironmentName
+    action_type: OutboxActionType
+    target_identity: str = Field(min_length=1)
+    payload: dict[str, Any] = Field(default_factory=dict)
+    idempotency_key: str = Field(min_length=1)
+    job_lease_epoch: int = Field(ge=0)
+    status: OutboxStatus
+    attempt_count: int = Field(ge=0)
+    lease_epoch: int = Field(ge=0)
+    next_attempt_at: datetime | None = None
+    last_attempt_at: datetime | None = None
+    last_error: str | None = None
+
+
+class OutboxWriteRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    outbox_id: str = Field(min_length=1)
+    job_id: str = Field(min_length=1)
+    entity_key: str = Field(min_length=1)
+    environment: EnvironmentName
+    action_type: OutboxActionType
+    target_identity: str = Field(min_length=1)
+    payload: dict[str, Any] = Field(default_factory=dict)
+    idempotency_key: str = Field(min_length=1)
+    job_lease_epoch: int = Field(ge=0)
+    next_attempt_at: datetime | None = None
+
+
 __all__ = [
     'AgentEvent',
     'CommentTarget',
@@ -145,6 +200,11 @@ __all__ = [
     'JobKind',
     'JobRecord',
     'JobState',
+    'OutboxActionType',
+    'OutboxRecord',
+    'OutboxStatus',
+    'OutboxWriteRequest',
     'PolicyDecision',
     'RuntimeMode',
+    'WatcherStatus',
 ]

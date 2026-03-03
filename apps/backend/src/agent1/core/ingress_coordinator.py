@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from agent1.adapters.github.scanner import GitHubNotificationScanner
 from agent1.adapters.github.scanner import GitHubIngressScanner
+from agent1.core.contracts import EnvironmentName
 from agent1.core.contracts import JobRecord
 from agent1.core.contracts import RuntimeMode
+from agent1.core.ingress_contracts import IngressOrderingDecision
 from agent1.core.ingress_contracts import NormalizedIngressEvent
 from agent1.core.ingress_normalizer import GitHubIngressNormalizer
 from agent1.core.orchestrator import JobOrchestrator
@@ -24,6 +26,7 @@ def create_runtime_ingress_coordinator(
     allow_top_level_pr_fallback: bool = False,
     codex_executor: CodexExecutor | None = None,
     runtime_mode: RuntimeMode = RuntimeMode.ACTIVE,
+    environment: EnvironmentName = EnvironmentName.DEV,
     orchestrator: JobOrchestrator | None = None,
     normalizer: GitHubIngressNormalizer | None = None,
 ) -> 'GitHubIngressCoordinator':
@@ -40,6 +43,7 @@ def create_runtime_ingress_coordinator(
     allow_top_level_pr_fallback (bool): Whether top-level PR fallback is allowed for review thread events.
     codex_executor (CodexExecutor | None): Optional Codex executor for remediation tasks.
     runtime_mode (RuntimeMode): Runtime mode used for created jobs.
+    environment (EnvironmentName): Runtime environment used for ingress ordering persistence.
     orchestrator (JobOrchestrator | None): Optional orchestrator dependency override.
     normalizer (GitHubIngressNormalizer | None): Optional normalizer dependency override.
 
@@ -70,6 +74,7 @@ def create_runtime_ingress_coordinator(
         normalizer=normalizer,
         mention_executor=mention_executor,
         runtime_mode=runtime_mode,
+        environment=environment,
     )
 
 
@@ -108,12 +113,14 @@ class GitHubIngressCoordinator:
         normalizer: GitHubIngressNormalizer | None = None,
         mention_executor: MentionActionExecutor | None = None,
         runtime_mode: RuntimeMode = RuntimeMode.ACTIVE,
+        environment: EnvironmentName = EnvironmentName.DEV,
     ) -> None:
         self._scanner = scanner
         self._orchestrator = orchestrator or JobOrchestrator()
         self._normalizer = normalizer or GitHubIngressNormalizer()
         self._mention_executor = mention_executor
         self._runtime_mode = runtime_mode
+        self._environment = environment
 
     def _process_normalized_event(self, normalized_event: NormalizedIngressEvent) -> JobRecord:
         current_job = self._orchestrator.get_job(normalized_event.job_id)
@@ -127,7 +134,20 @@ class GitHubIngressCoordinator:
             )
 
         if normalized_event.should_claim_lease:
-            self._orchestrator.claim_job(current_job.job_id, trace_id=normalized_event.trace_id)
+            claimed = self._orchestrator.claim_job(current_job.job_id, trace_id=normalized_event.trace_id)
+            if claimed is False:
+                latest_job = self._orchestrator.get_job(current_job.job_id)
+                if latest_job is not None:
+                    return latest_job
+
+                return current_job
+
+            latest_job = self._orchestrator.get_job(current_job.job_id)
+            if latest_job is None:
+                message = f'Job missing after successful claim: {current_job.job_id}'
+                raise ValueError(message)
+
+            current_job = latest_job
 
         if (
             normalized_event.transition_to is not None
@@ -168,9 +188,24 @@ class GitHubIngressCoordinator:
 
         with get_tracer().start_as_current_span('ingress.coordinator.process_once') as span:
             ingress_events = self._scanner.scan()
-            normalized_events = self._normalizer.normalize_events(ingress_events)
+            normalized_events: list[NormalizedIngressEvent] = []
+            stale_events_count = 0
+            for ingress_event in ingress_events:
+                persisted_ingress_event = self._orchestrator.persist_ingress_event(
+                    ingress_event=ingress_event,
+                    environment=self._environment,
+                )
+                if persisted_ingress_event.ordering_decision == IngressOrderingDecision.STALE:
+                    stale_events_count = stale_events_count + 1
+                    continue
+
+                normalized_event = self._normalizer.normalize_event(ingress_event)
+                if normalized_event is not None:
+                    normalized_events.append(normalized_event)
+
             span.set_attribute('agent1.ingress.events_count', len(ingress_events))
             span.set_attribute('agent1.ingress.normalized_events_count', len(normalized_events))
+            span.set_attribute('agent1.ingress.stale_events_count', stale_events_count)
             processed_jobs = [self._process_normalized_event(event) for event in normalized_events]
             span.set_attribute('agent1.ingress.jobs_touched_count', len(processed_jobs))
             return processed_jobs

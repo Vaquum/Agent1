@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from datetime import timedelta
 from datetime import timezone
 
 from sqlalchemy.orm import Session
@@ -126,3 +127,57 @@ def test_list_recent_events_applies_filters_and_count(
         assert len(filtered_events) == 1
         assert filtered_events[0].job_id == 'job_filter_2'
         assert filtered_count == 1
+
+
+def test_count_recent_failed_transition_events(
+    session_factory: sessionmaker[Session],
+) -> None:
+    now = datetime.now(timezone.utc)
+    with session_factory() as session:
+        repository = EventRepository(session)
+        repository.append_event(
+            AgentEvent(
+                timestamp=now - timedelta(minutes=10),
+                environment=EnvironmentName.DEV,
+                trace_id='trc_old',
+                job_id='job_old',
+                entity_key='Vaquum/Agent1#23',
+                source=EventSource.AGENT,
+                event_type=EventType.STATE_TRANSITION,
+                status=EventStatus.BLOCKED,
+                details={'message': 'old'},
+            )
+        )
+        repository.append_event(
+            AgentEvent(
+                timestamp=now,
+                environment=EnvironmentName.DEV,
+                trace_id='trc_recent_failed',
+                job_id='job_recent_failed',
+                entity_key='Vaquum/Agent1#24',
+                source=EventSource.AGENT,
+                event_type=EventType.STATE_TRANSITION,
+                status=EventStatus.ERROR,
+                details={'message': 'recent_failed'},
+            )
+        )
+        repository.append_event(
+            AgentEvent(
+                timestamp=now,
+                environment=EnvironmentName.DEV,
+                trace_id='trc_recent_ok',
+                job_id='job_recent_ok',
+                entity_key='Vaquum/Agent1#25',
+                source=EventSource.AGENT,
+                event_type=EventType.STATE_TRANSITION,
+                status=EventStatus.OK,
+                details={'message': 'recent_ok'},
+            )
+        )
+        session.commit()
+
+        failed_count = repository.count_recent_failed_transition_events(
+            window_start=now - timedelta(minutes=5),
+        )
+
+        assert failed_count == 1

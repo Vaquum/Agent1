@@ -14,3 +14,7 @@ Dashboard API configuration:
 - Overview endpoint: `GET /dashboard/overview` with `limit`, `offset`, `entity_key`, `job_id`, `trace_id`, `status`.
 - Timeline endpoint: `GET /dashboard/jobs/{job_id}/timeline` with `limit` and `offset`.
 - Timeline UI supports event inspection, reason-based transition correlation, and trace filter pivot back to overview.
+
+## Container runtime
+
+- Build image from repository root: `docker build -f apps/frontend/Dockerfile .`

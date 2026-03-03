@@ -21,6 +21,7 @@ from agent1.core.orchestrator import JobOrchestrator
 from agent1.core.services.ingress_cursor_store import PersistenceIngressCursorStore
 from agent1.core.services.mention_action_executor import MentionActionExecutor
 from agent1.core.services.persistence_service import PersistenceService
+from agent1.db.models import GitHubEventModel
 
 
 def test_ingress_coordinator_creates_and_advances_issue_job(
@@ -414,3 +415,63 @@ def test_ingress_coordinator_handles_pr_author_ci_cycle(
     assert len(processed_jobs) == 1
     assert fake_client.comment_count == 1
     assert processed_jobs[0].state == JobState.AWAITING_CI
+
+
+def test_ingress_coordinator_persists_stale_events_and_skips_processing(
+    session_factory: sessionmaker[Session],
+) -> None:
+    scanner = InMemoryGitHubIngressScanner(
+        [
+            GitHubIngressEvent(
+                event_id='evt_ordering_newer',
+                repository='Vaquum/Agent1',
+                entity_number=97,
+                entity_type=IngressEntityType.ISSUE,
+                actor='mikkokotila',
+                event_type=IngressEventType.ISSUE_MENTION,
+                timestamp=datetime(2026, 3, 5, 10, 1, tzinfo=timezone.utc),
+                details={},
+            ),
+            GitHubIngressEvent(
+                event_id='evt_ordering_older',
+                repository='Vaquum/Agent1',
+                entity_number=97,
+                entity_type=IngressEntityType.ISSUE,
+                actor='mikkokotila',
+                event_type=IngressEventType.ISSUE_MENTION,
+                timestamp=datetime(2026, 3, 5, 10, 0, tzinfo=timezone.utc),
+                details={},
+            ),
+        ]
+    )
+    persistence_service = PersistenceService(session_factory=session_factory)
+    orchestrator = JobOrchestrator(persistence_service=persistence_service)
+    fake_client = _FakeMentionGitHubClient()
+    mention_executor = MentionActionExecutor(
+        response_template='Ack {entity_key}',
+        clarification_template='Need clarification for {entity_key}',
+        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
+        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
+        github_client=fake_client,
+    )
+    coordinator = GitHubIngressCoordinator(
+        scanner=scanner,
+        orchestrator=orchestrator,
+        normalizer=GitHubIngressNormalizer(),
+        mention_executor=mention_executor,
+    )
+
+    processed_jobs = coordinator.process_once()
+
+    with session_factory() as verification_session:
+        ingress_event_count = verification_session.query(GitHubEventModel).count()
+        stale_event_count = (
+            verification_session.query(GitHubEventModel)
+            .filter(GitHubEventModel.is_stale.is_(True))
+            .count()
+        )
+
+    assert len(processed_jobs) == 1
+    assert fake_client.comment_count == 1
+    assert ingress_event_count == 2
+    assert stale_event_count == 1

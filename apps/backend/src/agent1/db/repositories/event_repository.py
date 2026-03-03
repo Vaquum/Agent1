@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy.orm import Session
 
 from agent1.core.contracts import AgentEvent
 from agent1.core.contracts import EventStatus
+from agent1.core.contracts import EventType
 from agent1.db.models import EventJournalModel
 
 
@@ -107,6 +110,36 @@ class EventRepository:
             query = query.filter(EventJournalModel.status == status)
 
         return query.count()
+
+    def count_recent_failed_transition_events(
+        self,
+        window_start: datetime,
+    ) -> int:
+
+        '''
+        Create count of recent blocked or error transition events.
+
+        Args:
+        window_start (datetime): Inclusive lower bound for event timestamps.
+
+        Returns:
+        int: Recent failed transition event count.
+        '''
+
+        return (
+            self._session.query(EventJournalModel)
+            .filter(EventJournalModel.timestamp >= window_start)
+            .filter(EventJournalModel.event_type == EventType.STATE_TRANSITION)
+            .filter(
+                EventJournalModel.status.in_(
+                    [
+                        EventStatus.BLOCKED,
+                        EventStatus.ERROR,
+                    ],
+                ),
+            )
+            .count()
+        )
 
 
 __all__ = ['EventRepository']

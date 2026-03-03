@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import datetime
+from typing import Any
+from typing import cast
 
 from agent1.core.contracts import EnvironmentName
 from agent1.core.contracts import JobKind
 from agent1.core.contracts import JobRecord
 from agent1.core.contracts import JobState
 from agent1.core.contracts import RuntimeMode
+from agent1.core.services.watcher_lifecycle_service import WatcherSweepResult
 from agent1.core.services.ingress_worker import IngressWorker
 
 
@@ -40,6 +44,52 @@ class _StopAfterOneProcessor:
         return []
 
 
+class _WatcherLifecycleService:
+    def __init__(self) -> None:
+        self.sweep_calls = 0
+        self.track_calls = 0
+
+    def sweep(self, reference_time: datetime | None = None) -> WatcherSweepResult:
+        assert reference_time is not None
+        self.sweep_calls += 1
+        return WatcherSweepResult(
+            restored_count=0,
+            reclaimed_count=0,
+            operator_required_count=0,
+        )
+
+    def track_processed_jobs(
+        self,
+        processed_jobs: list[JobRecord],
+        reference_time: datetime | None = None,
+    ) -> int:
+        assert reference_time is not None
+        self.track_calls += 1
+        return len(processed_jobs)
+
+
+class _AlertSignalService:
+    def __init__(self) -> None:
+        self.backlog_checks = 0
+        self.failed_transition_checks = 0
+
+    def maybe_emit_outbox_backlog_growth(self, environment: EnvironmentName, trace_id: str) -> bool:
+        assert environment == EnvironmentName.DEV
+        assert trace_id != ''
+        self.backlog_checks += 1
+        return False
+
+    def maybe_emit_elevated_failed_transition_rates(
+        self,
+        environment: EnvironmentName,
+        trace_id: str,
+    ) -> bool:
+        assert environment == EnvironmentName.DEV
+        assert trace_id != ''
+        self.failed_transition_checks += 1
+        return False
+
+
 def test_ingress_worker_process_cycle_returns_jobs() -> None:
     worker = IngressWorker(ingress_processor=_StaticProcessor(), poll_interval_seconds=1)
 
@@ -60,3 +110,23 @@ def test_ingress_worker_background_lifecycle_stops_gracefully() -> None:
     assert started is True
     assert processor.calls >= 1
     assert worker.is_running() is False
+
+
+def test_ingress_worker_cycle_runs_watcher_and_alert_services() -> None:
+    watcher_lifecycle_service = _WatcherLifecycleService()
+    alert_signal_service = _AlertSignalService()
+    worker = IngressWorker(
+        ingress_processor=_StaticProcessor(),
+        poll_interval_seconds=1,
+        environment=EnvironmentName.DEV,
+        watcher_lifecycle_service=cast(Any, watcher_lifecycle_service),
+        alert_signal_service=cast(Any, alert_signal_service),
+    )
+
+    processed_jobs = worker.process_cycle()
+
+    assert len(processed_jobs) == 1
+    assert watcher_lifecycle_service.sweep_calls == 1
+    assert watcher_lifecycle_service.track_calls == 1
+    assert alert_signal_service.backlog_checks == 1
+    assert alert_signal_service.failed_transition_checks == 1

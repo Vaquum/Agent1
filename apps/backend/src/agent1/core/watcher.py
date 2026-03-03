@@ -6,6 +6,8 @@ from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
 
+from agent1.core.contracts import WatcherStatus
+
 
 class WatcherState(BaseModel):
     model_config = ConfigDict(extra='forbid')
@@ -17,6 +19,9 @@ class WatcherState(BaseModel):
     idle_cycles: int = Field(ge=0)
     watch_deadline_at: datetime
     checkpoint_cursor: str | None = None
+    status: WatcherStatus = WatcherStatus.ACTIVE
+    reclaim_count: int = Field(ge=0, default=0)
+    operator_required_at: datetime | None = None
 
 
 def compute_is_watcher_stale(

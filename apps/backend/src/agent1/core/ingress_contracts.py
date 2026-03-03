@@ -29,6 +29,11 @@ class IngressEventType(str, Enum):
     PR_UPDATED = 'pr_updated'
 
 
+class IngressOrderingDecision(str, Enum):
+    ACCEPTED = 'accepted'
+    STALE = 'stale'
+
+
 class GitHubIngressEvent(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
@@ -40,6 +45,17 @@ class GitHubIngressEvent(BaseModel):
     event_type: IngressEventType
     timestamp: datetime
     details: dict[str, Any] = Field(default_factory=dict)
+
+
+class PersistedIngressEvent(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    source_event_id: str = Field(min_length=1)
+    entity_key: str = Field(min_length=1)
+    source_timestamp_or_seq: str = Field(min_length=1)
+    received_at: datetime
+    ordering_decision: IngressOrderingDecision
+    stale_reason: str | None = None
 
 
 class NormalizedIngressEvent(BaseModel):
@@ -65,5 +81,7 @@ __all__ = [
     'GitHubIngressEvent',
     'IngressEntityType',
     'IngressEventType',
+    'IngressOrderingDecision',
     'NormalizedIngressEvent',
+    'PersistedIngressEvent',
 ]

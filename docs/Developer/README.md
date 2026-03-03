@@ -24,6 +24,9 @@ This directory contains developer-facing documentation for architecture, workflo
   - `apps/backend/alembic/versions/20260302_000001_initial_persistence.py`
   - `apps/backend/alembic/versions/20260303_000002_ingestion_cursors.py`
   - `apps/backend/alembic/versions/20260303_000003_runtime_scope_guards.py`
+  - `apps/backend/alembic/versions/20260304_000004_outbox_entries.py`
+  - `apps/backend/alembic/versions/20260304_000005_ingress_ordering_and_lease_fencing.py`
+  - `apps/backend/alembic/versions/20260304_000006_watcher_states.py`
 - Orchestration baseline is defined under:
   - `apps/backend/src/agent1/core/workflow.py`
   - `apps/backend/src/agent1/core/watcher.py`
@@ -47,13 +50,20 @@ This directory contains developer-facing documentation for architecture, workflo
   - incremental `since` cursor updates,
   - durable cursor checkpointing through `ingestion_cursors`,
   - PR timeline and check-run enrichment for higher-confidence review/CI events.
+- Ingress ordering reliability supports:
+  - durable ingress event persistence in `github_events` with `source_event_id`, `source_timestamp_or_seq`, and `received_at`,
+  - deterministic per-entity high-water ordering in `ingress_entity_cursors`,
+  - stale/out-of-order ingress event audit persistence with execution skip gates to prevent backward transitions.
 - Ingress worker runtime supports:
   - background polling loop started on FastAPI startup and stopped on shutdown,
   - fail-fast startup ownership fencing for active runtime scopes via persisted `runtime_scope_guards`,
   - poll interval sourced from `controls/runtime/default.json`,
+  - watcher lifecycle persistence in `watcher_states` with durable fields `next_check_at`, `last_heartbeat_at`, `idle_cycles`, `watch_deadline_at`, and `checkpoint_cursor`,
+  - stale-watcher sweeper reclaim with checkpoint restoration and operator-required escalation for irrecoverably stuck watchers,
   - runtime mode propagation (`active`, `shadow`, `dry_run`) from controls into created jobs,
   - active-scope repository filtering and dev sandbox-scope filtering during normalization,
-  - cycle heartbeat and failure logging per processing cycle.
+  - cycle heartbeat and failure logging per processing cycle,
+  - runtime alert-signal checks for outbox backlog growth and elevated failed transition rates.
 - First deterministic side-effect path supports:
   - issue/PR mention detection in normalized ingress events,
   - self-trigger prevention by ignoring comment-driven ingress events from the configured agent actor,
@@ -73,7 +83,38 @@ This directory contains developer-facing documentation for architecture, workflo
   - deterministic resume transition `blocked -> ready_to_execute -> awaiting_human_feedback` on sufficient context updates,
   - deterministic reviewer follow-up transition `awaiting_human_feedback -> ready_to_execute -> awaiting_human_feedback`,
   - deterministic state advancement `ready_to_execute -> executing -> awaiting_human_feedback`,
+  - lease-epoch validation before mutating GitHub side effects to reject stale-owner writes,
   - blocked transition on comment post failure.
+- Runtime safety policy enforcement is defined under:
+  - `apps/backend/src/agent1/adapters/github/client.py`
+  - `apps/backend/src/agent1/core/control_schemas.py`
+  - `controls/policies/default.json`
+  - `apps/backend/src/agent1/config/settings.py`
+- Runtime safety guarantees:
+  - mutating GitHub calls perform credential-owner preflight binding against environment policy (`dev`/`prod`/`ci`),
+  - read-only scanner operations and mutating operations use separate credentials when split enforcement is enabled,
+  - GitHub capability checks are explicit and default-deny by policy,
+  - policy resolution fails closed when control loading is missing or invalid.
+- Outbox reliability baseline is defined under:
+  - `apps/backend/src/agent1/db/repositories/outbox_repository.py`
+  - `apps/backend/src/agent1/core/services/outbox_dispatcher.py`
+  - `apps/backend/src/agent1/core/services/persistence_service.py` (`transition_job_state_with_outbox`)
+  - `apps/backend/src/agent1/core/orchestrator.py` (`transition_job_with_outbox`)
+- Outbox reliability guarantees:
+  - transactional persistence of outbox intent rows in the same commit as state transitions,
+  - retry-safe dispatch state machine with statuses `pending -> sent -> confirmed` and failure states `failed` / `aborted`,
+  - mutating dispatch lease-epoch validation against persisted job lease ownership,
+  - idempotency-scope reconciliation guard before retry dispatch,
+  - duplicate side-effect anomaly alert signal emission on reconciliation abort.
+- Operational alert-signal runtime baseline is defined under:
+  - `apps/backend/src/agent1/core/services/alert_signal_service.py`
+  - `apps/backend/src/agent1/core/services/outbox_dispatcher.py`
+  - `apps/backend/src/agent1/core/services/mention_action_executor.py`
+  - `apps/backend/src/agent1/core/orchestrator.py`
+  - `apps/backend/src/agent1/core/services/ingress_worker.py`
+- Operational alert-signal guarantees:
+  - alert signals are emitted for lease violations, duplicate side-effect anomalies, comment-routing failures, outbox backlog growth, and elevated failed transition rates,
+  - alert payloads include deterministic runbook linkage and always carry `trace_id` and `job_id`.
 - Codex execution baseline is defined under:
   - `apps/backend/src/agent1/adapters/codex/contracts.py`
   - `apps/backend/src/agent1/adapters/codex/client.py`
@@ -130,6 +171,13 @@ This directory contains developer-facing documentation for architecture, workflo
   - `docs/Developer/rollback-rehearsal-log.md` (rollback rehearsal evidence log)
   - `tests/operations/run.py` (required runbook and evidence validator)
   - `tests/operations/README.md` (operations gate index)
+- Deployment artifacts and environment contract are defined under:
+  - `apps/backend/Dockerfile` (backend runtime container image)
+  - `apps/backend/docker/entrypoint.sh` (backend startup and migration command)
+  - `apps/frontend/Dockerfile` (frontend static runtime container image)
+  - `.dockerignore` (container build context policy)
+  - `render.yaml` (Render service blueprint and release automation wiring)
+  - `docs/Developer/deployment-environment-contract.md` (required deployment environment variables)
 - Frontend operations dashboard baseline is defined under:
   - `apps/frontend/src/main.ts`
   - `apps/frontend/src/styles.css`

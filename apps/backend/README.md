@@ -9,3 +9,8 @@ FastAPI backend for Agent1 orchestration, APIs, and adapters.
 - Lint: `ruff check src`
 - Typecheck: `mypy src`
 - Migrate: `alembic upgrade head`
+
+## Container runtime
+
+- Build image from repository root: `docker build -f apps/backend/Dockerfile .`
+- Container startup runs `alembic upgrade head` before serving API traffic.

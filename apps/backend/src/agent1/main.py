@@ -15,6 +15,7 @@ from agent1.core.contracts import EnvironmentName
 from agent1.core.control_loader import validate_control_bundle
 from agent1.core.ingress_coordinator import create_runtime_ingress_coordinator
 from agent1.core.ingress_normalizer import GitHubIngressNormalizer
+from agent1.core.services.alert_signal_service import AlertSignalService
 from agent1.core.services.codex_executor import CodexExecutor
 from agent1.core.services.ingress_worker import IngressWorker
 from agent1.core.services.runtime_scope_guard import RuntimeScopeGuard
@@ -24,6 +25,7 @@ from agent1.core.services.trace_context import TRACE_HEADER_NAME
 from agent1.core.services.trace_context import get_or_create_trace_id
 from agent1.core.services.trace_context import reset_trace_id
 from agent1.core.services.trace_context import set_trace_id
+from agent1.core.services.watcher_lifecycle_service import WatcherLifecycleService
 
 APP_NAME = 'Agent1 Backend'
 APP_VERSION = '0.1.0'
@@ -125,9 +127,20 @@ def create_application() -> FastAPI:
         runtime_mode=control_bundle.runtime.mode,
         normalizer=ingress_normalizer,
     )
+    alert_signal_service = AlertSignalService()
+    watcher_lifecycle_service = WatcherLifecycleService(
+        environment=EnvironmentName.DEV,
+        watch_interval_seconds=control_bundle.runtime.watch_interval_seconds,
+        stale_after_seconds=max(control_bundle.runtime.watch_interval_seconds * 2, 30),
+        max_reclaim_attempts=max(control_bundle.runtime.max_retry_attempts, 1),
+        watch_deadline_seconds=max(control_bundle.runtime.watch_interval_seconds * 20, 300),
+    )
     ingress_worker = IngressWorker(
         ingress_processor=ingress_coordinator,
         poll_interval_seconds=control_bundle.runtime.poll_interval_seconds,
+        environment=EnvironmentName.DEV,
+        watcher_lifecycle_service=watcher_lifecycle_service,
+        alert_signal_service=alert_signal_service,
     )
     runtime_scope_guard = RuntimeScopeGuard(
         environment=EnvironmentName.DEV,
@@ -158,6 +171,8 @@ def create_application() -> FastAPI:
     application.state.ingress_worker = ingress_worker
     application.state.runtime_scope_guard = runtime_scope_guard
     application.state.codex_executor = codex_executor
+    application.state.alert_signal_service = alert_signal_service
+    application.state.watcher_lifecycle_service = watcher_lifecycle_service
     application.include_router(dashboard_router)
     application.include_router(health_router)
     return application

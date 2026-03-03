@@ -1,0 +1,13 @@
+.git
+.github
+.pytest_cache
+.ruff_cache
+node_modules
+venv
+apps/frontend/node_modules
+apps/frontend/dist
+apps/backend/.pytest_cache
+apps/backend/.ruff_cache
+apps/backend/.mypy_cache
+apps/backend/agent1.db
+tests/live/.tokens

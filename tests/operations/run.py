@@ -66,6 +66,31 @@ REQUIRED_ROLLBACK_REHEARSAL_HEADINGS: tuple[str, ...] = (
     '## Latest Rehearsal',
     '## Rehearsal History',
 )
+DEPLOYMENT_ENVIRONMENT_CONTRACT_RELATIVE_PATH = 'docs/Developer/deployment-environment-contract.md'
+REQUIRED_DEPLOYMENT_CONTRACT_HEADINGS: tuple[str, ...] = (
+    '# Deployment Environment Contract',
+    '## Overview',
+    '## Backend Environment Variables',
+    '## Frontend Environment Variables',
+    '## Release Migration Automation',
+)
+REQUIRED_DEPLOYMENT_ARTIFACT_PATHS: tuple[str, ...] = (
+    '.dockerignore',
+    'render.yaml',
+    'apps/backend/Dockerfile',
+    'apps/backend/docker/entrypoint.sh',
+    'apps/frontend/Dockerfile',
+)
+REQUIRED_RENDER_BLUEPRINT_SNIPPETS: tuple[str, ...] = (
+    'name: agent1-backend',
+    'name: agent1-frontend',
+    'dockerfilePath: ./apps/backend/Dockerfile',
+    'dockerfilePath: ./apps/frontend/Dockerfile',
+    'preDeployCommand: cd /app/apps/backend && alembic upgrade head',
+    'DATABASE_URL',
+    'GITHUB_TOKEN',
+    'VITE_AGENT1_API_BASE_URL',
+)
 PLACEHOLDER_TOKENS: tuple[str, ...] = (
     'todo',
     'tbd',
@@ -542,6 +567,58 @@ def _validate_rollback_rehearsal_log(repo_root: Path) -> list[str]:
     return findings
 
 
+def _validate_deployment_artifacts(repo_root: Path) -> list[str]:
+
+    '''
+    Create deployment artifact and environment-contract validation findings.
+
+    Args:
+    repo_root (Path): Repository root path.
+
+    Returns:
+    list[str]: Human-readable validation finding messages.
+    '''
+
+    findings: list[str] = []
+    for relative_path in REQUIRED_DEPLOYMENT_ARTIFACT_PATHS:
+        artifact_path = repo_root / relative_path
+        if not artifact_path.exists():
+            findings.append(f'Missing deployment artifact: {relative_path}.')
+
+    contract_path = repo_root / DEPLOYMENT_ENVIRONMENT_CONTRACT_RELATIVE_PATH
+    if not contract_path.exists():
+        findings.append(
+            'Missing deployment environment contract: '
+            f'{DEPLOYMENT_ENVIRONMENT_CONTRACT_RELATIVE_PATH}.',
+        )
+    else:
+        contract_text = _read_text(contract_path)
+        if _contains_placeholder(contract_text):
+            findings.append('Deployment environment contract contains placeholder content.')
+
+        for heading in REQUIRED_DEPLOYMENT_CONTRACT_HEADINGS:
+            if heading not in contract_text:
+                findings.append(f'Missing deployment contract heading: {heading}.')
+
+        if 'DATABASE_URL' not in contract_text:
+            findings.append('Deployment environment contract is missing DATABASE_URL requirement.')
+        if 'GITHUB_TOKEN' not in contract_text:
+            findings.append('Deployment environment contract is missing GITHUB_TOKEN requirement.')
+        if 'VITE_AGENT1_API_BASE_URL' not in contract_text:
+            findings.append(
+                'Deployment environment contract is missing VITE_AGENT1_API_BASE_URL requirement.',
+            )
+
+    render_blueprint_path = repo_root / 'render.yaml'
+    if render_blueprint_path.exists():
+        render_blueprint_text = _read_text(render_blueprint_path)
+        for snippet in REQUIRED_RENDER_BLUEPRINT_SNIPPETS:
+            if snippet not in render_blueprint_text:
+                findings.append(f'render.yaml is missing required snippet: {snippet}.')
+
+    return findings
+
+
 def main() -> int:
 
     '''
@@ -560,6 +637,7 @@ def main() -> int:
         *_validate_incident_response_policy(repo_root),
         *_validate_release_control(repo_root),
         *_validate_rollback_rehearsal_log(repo_root),
+        *_validate_deployment_artifacts(repo_root),
     ]
     if len(findings) != 0:
         print('Operational readiness validation failed:')
