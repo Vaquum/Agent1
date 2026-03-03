@@ -17,3 +17,4 @@ def test_metadata_contains_core_tables() -> None:
     assert 'watcher_states' in table_names
     assert 'entities' in table_names
     assert 'action_attempts' in table_names
+    assert 'comment_targets' in table_names

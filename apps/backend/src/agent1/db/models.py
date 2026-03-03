@@ -17,6 +17,7 @@ from sqlalchemy.orm import relationship
 
 from agent1.core.contracts import EnvironmentName
 from agent1.core.contracts import ActionAttemptStatus
+from agent1.core.contracts import CommentTargetType
 from agent1.core.contracts import EntityType
 from agent1.core.contracts import EventSource
 from agent1.core.contracts import EventStatus
@@ -266,6 +267,54 @@ class OutboxEntryModel(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now, nullable=False)
 
 
+class CommentTargetModel(Base):
+    __tablename__ = 'comment_targets'
+    __table_args__ = (
+        UniqueConstraint(
+            'environment',
+            'outbox_id',
+            name='uq_comment_targets_environment_outbox_id',
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    target_id: Mapped[str] = mapped_column(String(MAX_ID_LENGTH), nullable=False, unique=True, index=True)
+    outbox_id: Mapped[str] = mapped_column(
+        String(MAX_ID_LENGTH),
+        ForeignKey('outbox_entries.outbox_id'),
+        nullable=False,
+        index=True,
+    )
+    job_id: Mapped[str] = mapped_column(
+        String(MAX_ID_LENGTH),
+        ForeignKey('jobs.job_id'),
+        nullable=False,
+        index=True,
+    )
+    entity_key: Mapped[str] = mapped_column(String(MAX_ENTITY_KEY_LENGTH), nullable=False, index=True)
+    environment: Mapped[EnvironmentName] = mapped_column(
+        Enum(EnvironmentName, native_enum=False),
+        nullable=False,
+        index=True,
+    )
+    target_type: Mapped[CommentTargetType] = mapped_column(
+        Enum(CommentTargetType, native_enum=False),
+        nullable=False,
+        index=True,
+    )
+    target_identity: Mapped[str] = mapped_column(String(MAX_ENTITY_KEY_LENGTH), nullable=False, index=True)
+    issue_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pr_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    thread_id: Mapped[str | None] = mapped_column(String(MAX_ID_LENGTH), nullable=True)
+    review_comment_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    path: Mapped[str | None] = mapped_column(String(MAX_ENTITY_KEY_LENGTH), nullable=True)
+    line: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    side: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    resolved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now, nullable=False)
+
+
 class ActionAttemptModel(Base):
     __tablename__ = 'action_attempts'
     __table_args__ = (
@@ -356,6 +405,7 @@ class WatcherStateModel(Base):
 
 __all__ = [
     'ActionAttemptModel',
+    'CommentTargetModel',
     'EntityModel',
     'EventJournalModel',
     'GitHubEventModel',

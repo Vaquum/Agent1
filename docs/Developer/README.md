@@ -29,8 +29,10 @@ This directory contains developer-facing documentation for architecture, workflo
   - `apps/backend/alembic/versions/20260304_000006_watcher_states.py`
   - `apps/backend/alembic/versions/20260304_000007_entities.py`
   - `apps/backend/alembic/versions/20260304_000008_action_attempts.py`
+  - `apps/backend/alembic/versions/20260304_000009_comment_targets.py`
 - Entity durability baseline now includes `entities` as a first-class persisted table keyed by (`environment`, `entity_key`) with repository/type metadata.
 - Action attempt durability baseline now includes `action_attempts` linked to both `jobs` and `outbox_entries` for append-only side-effect attempt history.
+- Comment-target durability baseline now includes `comment_targets` for deterministic routing target persistence linked to both `jobs` and `outbox_entries`.
 - Orchestration baseline is defined under:
   - `apps/backend/src/agent1/core/workflow.py`
   - `apps/backend/src/agent1/core/watcher.py`

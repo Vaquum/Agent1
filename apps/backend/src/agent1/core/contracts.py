@@ -177,6 +177,26 @@ class CommentTarget(BaseModel):
     side: str | None = None
 
 
+class CommentTargetRecord(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    target_id: str = Field(min_length=1)
+    outbox_id: str = Field(min_length=1)
+    job_id: str = Field(min_length=1)
+    entity_key: str = Field(min_length=1)
+    environment: EnvironmentName
+    target_type: CommentTargetType
+    target_identity: str = Field(min_length=1)
+    issue_number: int | None = Field(default=None, gt=0)
+    pr_number: int | None = Field(default=None, gt=0)
+    thread_id: str | None = None
+    review_comment_id: int | None = Field(default=None, gt=0)
+    path: str | None = None
+    line: int | None = Field(default=None, gt=0)
+    side: str | None = None
+    resolved_at: datetime
+
+
 class OutboxRecord(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
@@ -232,6 +252,7 @@ __all__ = [
     'ActionAttemptStatus',
     'AgentEvent',
     'CommentTarget',
+    'CommentTargetRecord',
     'CommentTargetType',
     'EntityRecord',
     'EntityType',

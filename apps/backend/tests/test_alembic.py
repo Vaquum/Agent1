@@ -35,3 +35,4 @@ def test_alembic_upgrade_head_creates_core_tables(tmp_path: Path, monkeypatch: M
     assert 'watcher_states' in table_names
     assert 'entities' in table_names
     assert 'action_attempts' in table_names
+    assert 'comment_targets' in table_names
