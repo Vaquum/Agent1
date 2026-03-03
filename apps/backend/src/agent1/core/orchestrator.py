@@ -172,6 +172,9 @@ class JobOrchestrator:
         action_type: OutboxActionType,
         target_identity: str,
         idempotency_key: str,
+        idempotency_schema_version: str | None = None,
+        idempotency_payload_hash: str | None = None,
+        idempotency_policy_version_hash: str | None = None,
     ) -> OutboxRecord | None:
 
         '''
@@ -182,6 +185,9 @@ class JobOrchestrator:
         action_type (OutboxActionType): Outbox side-effect action type.
         target_identity (str): Deterministic target identity.
         idempotency_key (str): Deterministic idempotency key.
+        idempotency_schema_version (str | None): Optional idempotency schema version filter.
+        idempotency_payload_hash (str | None): Optional payload hash filter.
+        idempotency_policy_version_hash (str | None): Optional policy-version hash filter.
 
         Returns:
         OutboxRecord | None: Typed outbox contract or None when missing.
@@ -192,6 +198,9 @@ class JobOrchestrator:
             action_type=action_type,
             target_identity=target_identity,
             idempotency_key=idempotency_key,
+            idempotency_schema_version=idempotency_schema_version,
+            idempotency_payload_hash=idempotency_payload_hash,
+            idempotency_policy_version_hash=idempotency_policy_version_hash,
         )
 
     def get_comment_target_by_outbox_id(

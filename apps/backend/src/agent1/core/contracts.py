@@ -208,6 +208,9 @@ class OutboxRecord(BaseModel):
     target_identity: str = Field(min_length=1)
     payload: dict[str, Any] = Field(default_factory=dict)
     idempotency_key: str = Field(min_length=1)
+    idempotency_schema_version: str | None = None
+    idempotency_payload_hash: str | None = None
+    idempotency_policy_version_hash: str | None = None
     job_lease_epoch: int = Field(ge=0)
     status: OutboxStatus
     attempt_count: int = Field(ge=0)
@@ -228,6 +231,10 @@ class OutboxWriteRequest(BaseModel):
     target_identity: str = Field(min_length=1)
     payload: dict[str, Any] = Field(default_factory=dict)
     idempotency_key: str = Field(min_length=1)
+    idempotency_policy_version: str = Field(min_length=1, default='unversioned')
+    idempotency_schema_version: str | None = None
+    idempotency_payload_hash: str | None = None
+    idempotency_policy_version_hash: str | None = None
     job_lease_epoch: int = Field(ge=0)
     next_attempt_at: datetime | None = None
 

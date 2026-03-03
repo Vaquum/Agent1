@@ -24,6 +24,7 @@ def create_runtime_ingress_coordinator(
     author_follow_up_template: str = '',
     require_review_thread_reply: bool = True,
     allow_top_level_pr_fallback: bool = False,
+    idempotency_policy_version: str = 'unversioned',
     codex_executor: CodexExecutor | None = None,
     runtime_mode: RuntimeMode = RuntimeMode.ACTIVE,
     environment: EnvironmentName = EnvironmentName.DEV,
@@ -41,6 +42,7 @@ def create_runtime_ingress_coordinator(
     author_follow_up_template (str): Author follow-up template for PR author workflows.
     require_review_thread_reply (bool): Whether PR review-thread replies are mandatory for thread events.
     allow_top_level_pr_fallback (bool): Whether top-level PR fallback is allowed for review thread events.
+    idempotency_policy_version (str): Policy version used for idempotency schema composition.
     codex_executor (CodexExecutor | None): Optional Codex executor for remediation tasks.
     runtime_mode (RuntimeMode): Runtime mode used for created jobs.
     environment (EnvironmentName): Runtime environment used for ingress ordering persistence.
@@ -63,6 +65,7 @@ def create_runtime_ingress_coordinator(
             author_follow_up_template=author_follow_up_template,
             require_review_thread_reply=require_review_thread_reply,
             allow_top_level_pr_fallback=allow_top_level_pr_fallback,
+            idempotency_policy_version=idempotency_policy_version,
             codex_executor=codex_executor,
         )
         if mention_response_template.strip() != ''

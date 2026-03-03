@@ -18,3 +18,7 @@ def test_metadata_contains_core_tables() -> None:
     assert 'entities' in table_names
     assert 'action_attempts' in table_names
     assert 'comment_targets' in table_names
+    outbox_columns = set(Base.metadata.tables['outbox_entries'].columns.keys())
+    assert 'idempotency_schema_version' in outbox_columns
+    assert 'idempotency_payload_hash' in outbox_columns
+    assert 'idempotency_policy_version_hash' in outbox_columns

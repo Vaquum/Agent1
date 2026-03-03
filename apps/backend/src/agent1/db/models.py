@@ -251,6 +251,9 @@ class OutboxEntryModel(Base):
     target_identity: Mapped[str] = mapped_column(String(MAX_ENTITY_KEY_LENGTH), nullable=False, index=True)
     payload: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
     idempotency_key: Mapped[str] = mapped_column(String(MAX_ID_LENGTH), nullable=False, index=True)
+    idempotency_schema_version: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)
+    idempotency_payload_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    idempotency_policy_version_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     job_lease_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[OutboxStatus] = mapped_column(
         Enum(OutboxStatus, native_enum=False),

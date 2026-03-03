@@ -36,3 +36,7 @@ def test_alembic_upgrade_head_creates_core_tables(tmp_path: Path, monkeypatch: M
     assert 'entities' in table_names
     assert 'action_attempts' in table_names
     assert 'comment_targets' in table_names
+    outbox_column_names = {column['name'] for column in inspector.get_columns('outbox_entries')}
+    assert 'idempotency_schema_version' in outbox_column_names
+    assert 'idempotency_payload_hash' in outbox_column_names
+    assert 'idempotency_policy_version_hash' in outbox_column_names

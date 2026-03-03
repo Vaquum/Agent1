@@ -170,6 +170,9 @@ class OutboxDispatcher:
             action_type=outbox_entry.action_type,
             target_identity=outbox_entry.target_identity,
             idempotency_key=outbox_entry.idempotency_key,
+            idempotency_schema_version=outbox_entry.idempotency_schema_version,
+            idempotency_payload_hash=outbox_entry.idempotency_payload_hash,
+            idempotency_policy_version_hash=outbox_entry.idempotency_policy_version_hash,
         )
         if scope_entry is None:
             return False

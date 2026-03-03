@@ -123,6 +123,7 @@ def create_application() -> FastAPI:
         author_follow_up_template=author_follow_up_template,
         require_review_thread_reply=control_bundle.commenting.require_review_thread_reply,
         allow_top_level_pr_fallback=control_bundle.commenting.allow_top_level_pr_fallback,
+        idempotency_policy_version=control_bundle.policies.version,
         codex_executor=codex_executor,
         runtime_mode=control_bundle.runtime.mode,
         normalizer=ingress_normalizer,

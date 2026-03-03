@@ -165,6 +165,9 @@ def _to_outbox_record(model: OutboxEntryModel) -> OutboxRecord:
         target_identity=model.target_identity,
         payload=model.payload,
         idempotency_key=model.idempotency_key,
+        idempotency_schema_version=model.idempotency_schema_version,
+        idempotency_payload_hash=model.idempotency_payload_hash,
+        idempotency_policy_version_hash=model.idempotency_policy_version_hash,
         job_lease_epoch=model.job_lease_epoch,
         status=model.status,
         attempt_count=model.attempt_count,
@@ -792,6 +795,10 @@ class PersistenceService:
                     target_identity=outbox_request.target_identity,
                     payload=outbox_request.payload,
                     idempotency_key=outbox_request.idempotency_key,
+                    idempotency_policy_version=outbox_request.idempotency_policy_version,
+                    idempotency_schema_version=outbox_request.idempotency_schema_version,
+                    idempotency_payload_hash=outbox_request.idempotency_payload_hash,
+                    idempotency_policy_version_hash=outbox_request.idempotency_policy_version_hash,
                     job_lease_epoch=outbox_request.job_lease_epoch,
                     next_attempt_at=outbox_request.next_attempt_at,
                 )
@@ -841,6 +848,10 @@ class PersistenceService:
                 target_identity=request.target_identity,
                 payload=request.payload,
                 idempotency_key=request.idempotency_key,
+                idempotency_policy_version=request.idempotency_policy_version,
+                idempotency_schema_version=request.idempotency_schema_version,
+                idempotency_payload_hash=request.idempotency_payload_hash,
+                idempotency_policy_version_hash=request.idempotency_policy_version_hash,
                 job_lease_epoch=request.job_lease_epoch,
                 next_attempt_at=request.next_attempt_at,
             )
@@ -873,6 +884,9 @@ class PersistenceService:
         action_type: OutboxActionType,
         target_identity: str,
         idempotency_key: str,
+        idempotency_schema_version: str | None = None,
+        idempotency_payload_hash: str | None = None,
+        idempotency_policy_version_hash: str | None = None,
     ) -> OutboxRecord | None:
 
         '''
@@ -883,6 +897,9 @@ class PersistenceService:
         action_type (OutboxActionType): Outbox side-effect action type.
         target_identity (str): Deterministic target identity.
         idempotency_key (str): Deterministic idempotency key.
+        idempotency_schema_version (str | None): Optional idempotency schema version filter.
+        idempotency_payload_hash (str | None): Optional payload hash filter.
+        idempotency_policy_version_hash (str | None): Optional policy-version hash filter.
 
         Returns:
         OutboxRecord | None: Typed outbox contract or None when missing.
@@ -895,6 +912,9 @@ class PersistenceService:
                 action_type=action_type,
                 target_identity=target_identity,
                 idempotency_key=idempotency_key,
+                idempotency_schema_version=idempotency_schema_version,
+                idempotency_payload_hash=idempotency_payload_hash,
+                idempotency_policy_version_hash=idempotency_policy_version_hash,
             )
             if model is None:
                 return None

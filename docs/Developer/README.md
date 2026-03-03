@@ -30,6 +30,7 @@ This directory contains developer-facing documentation for architecture, workflo
   - `apps/backend/alembic/versions/20260304_000007_entities.py`
   - `apps/backend/alembic/versions/20260304_000008_action_attempts.py`
   - `apps/backend/alembic/versions/20260304_000009_comment_targets.py`
+  - `apps/backend/alembic/versions/20260305_000010_outbox_idempotency_schema.py`
 - Entity durability baseline now includes `entities` as a first-class persisted table keyed by (`environment`, `entity_key`) with repository/type metadata.
 - Action attempt durability baseline now includes `action_attempts` linked to both `jobs` and `outbox_entries` for append-only side-effect attempt history.
 - Comment-target durability baseline now includes `comment_targets` for deterministic routing target persistence linked to both `jobs` and `outbox_entries`, plus replay/idempotency lookup APIs by outbox and idempotency scope.
@@ -114,8 +115,10 @@ This directory contains developer-facing documentation for architecture, workflo
 - Outbox reliability guarantees:
   - transactional persistence of outbox intent rows in the same commit as state transitions,
   - retry-safe dispatch state machine with statuses `pending -> sent -> confirmed` and failure states `failed` / `aborted`,
+  - canonical idempotency key builder baseline (`entity_key`, `action_type`, `target_identity`, `payload_hash`, `policy_version_hash`) for deterministic side-effect scope identity,
+  - outbox write-path schema enforcement for canonical idempotency scope when schema components are supplied,
   - mutating dispatch lease-epoch validation against persisted job lease ownership,
-  - idempotency-scope reconciliation guard before retry dispatch,
+  - idempotency-scope reconciliation guard before retry dispatch with schema-component filtering when available,
   - action-attempt lifecycle persistence in `action_attempts` with statuses `started` / `succeeded` / `failed` / `aborted` and deterministic error metadata,
   - duplicate side-effect anomaly alert signal emission on reconciliation abort.
 - Operational alert-signal runtime baseline is defined under:

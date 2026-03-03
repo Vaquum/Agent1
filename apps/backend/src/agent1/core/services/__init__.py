@@ -3,6 +3,7 @@ __all__ = [
     'comment_router',
     'codex_executor',
     'dashboard_service',
+    'idempotency_schema',
     'ingress_cursor_store',
     'ingress_worker',
     'mention_action_executor',

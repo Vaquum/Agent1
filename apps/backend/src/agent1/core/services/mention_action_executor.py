@@ -25,6 +25,8 @@ from agent1.core.ingress_contracts import NormalizedIngressEvent
 from agent1.core.orchestrator import JobOrchestrator
 from agent1.core.services.comment_router import CommentRouter
 from agent1.core.services.comment_router import CommentRoutingError
+from agent1.core.services.idempotency_schema import IDEMPOTENCY_DEFAULT_POLICY_VERSION
+from agent1.core.services.idempotency_schema import build_canonical_idempotency_scope
 from agent1.core.services.telemetry_runtime import get_tracer
 
 MENTION_EXECUTION_START_REASON = 'mention_action_started'
@@ -124,6 +126,7 @@ class MentionActionExecutor:
         author_follow_up_template: str,
         require_review_thread_reply: bool = True,
         allow_top_level_pr_fallback: bool = False,
+        idempotency_policy_version: str = IDEMPOTENCY_DEFAULT_POLICY_VERSION,
         github_client: GitHubApiClient | None = None,
         codex_executor: CodexTaskExecutor | None = None,
     ) -> None:
@@ -135,6 +138,7 @@ class MentionActionExecutor:
             require_review_thread_reply=require_review_thread_reply,
             allow_top_level_pr_fallback=allow_top_level_pr_fallback,
         )
+        self._idempotency_policy_version = idempotency_policy_version
         self._github_client = github_client or UrlLibGitHubApiClient()
         self._codex_executor = codex_executor
 
@@ -330,12 +334,22 @@ class MentionActionExecutor:
             comment_target=comment_target,
             comment_body=comment_body,
         )
-        idempotency_key = f"{normalized_event.idempotency_key}:comment_target"
+        idempotency_scope = build_canonical_idempotency_scope(
+            entity_key=current_job.entity_key,
+            action_type=action_type,
+            target_identity=target_identity,
+            payload=payload,
+            policy_version=self._idempotency_policy_version,
+        )
+        idempotency_key = idempotency_scope.idempotency_key
         existing_outbox = orchestrator.get_outbox_entry_by_idempotency_scope(
             environment=current_job.environment,
             action_type=action_type,
             target_identity=target_identity,
             idempotency_key=idempotency_key,
+            idempotency_schema_version=idempotency_scope.schema_version,
+            idempotency_payload_hash=idempotency_scope.payload_hash,
+            idempotency_policy_version_hash=idempotency_scope.policy_version_hash,
         )
         if existing_outbox is not None:
             existing_comment_target = orchestrator.get_comment_target_by_outbox_id(
@@ -358,6 +372,22 @@ class MentionActionExecutor:
             action_type=action_type,
             target_identity=target_identity,
         )
+        existing_outbox_by_outbox_id = orchestrator.get_outbox_entry_by_outbox_id(outbox_id)
+        if existing_outbox_by_outbox_id is not None:
+            existing_comment_target = orchestrator.get_comment_target_by_outbox_id(
+                environment=current_job.environment,
+                outbox_id=existing_outbox_by_outbox_id.outbox_id,
+            )
+            if existing_comment_target is None:
+                orchestrator.append_comment_target(
+                    self._build_comment_target_record(
+                        outbox_id=existing_outbox_by_outbox_id.outbox_id,
+                        current_job=current_job,
+                        comment_target=comment_target,
+                        target_identity=target_identity,
+                    ),
+                )
+            return existing_outbox_by_outbox_id, action_type
 
         outbox_record = orchestrator.append_outbox_entry(
             OutboxWriteRequest(
@@ -369,6 +399,10 @@ class MentionActionExecutor:
                 target_identity=target_identity,
                 payload=payload,
                 idempotency_key=idempotency_key,
+                idempotency_policy_version=self._idempotency_policy_version,
+                idempotency_schema_version=idempotency_scope.schema_version,
+                idempotency_payload_hash=idempotency_scope.payload_hash,
+                idempotency_policy_version_hash=idempotency_scope.policy_version_hash,
                 job_lease_epoch=current_job.lease_epoch,
             ),
         )

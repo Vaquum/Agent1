@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 from agent1.core.contracts import EnvironmentName
 from agent1.core.contracts import OutboxActionType
 from agent1.core.contracts import OutboxStatus
+from agent1.core.services.idempotency_schema import IDEMPOTENCY_DEFAULT_POLICY_VERSION
+from agent1.core.services.idempotency_schema import build_canonical_idempotency_scope
 from agent1.db.models import OutboxEntryModel
 
 
@@ -46,6 +48,10 @@ class OutboxRepository:
         payload: dict[str, object],
         idempotency_key: str,
         job_lease_epoch: int,
+        idempotency_policy_version: str = IDEMPOTENCY_DEFAULT_POLICY_VERSION,
+        idempotency_schema_version: str | None = None,
+        idempotency_payload_hash: str | None = None,
+        idempotency_policy_version_hash: str | None = None,
         next_attempt_at: datetime | None = None,
     ) -> OutboxEntryModel:
 
@@ -62,6 +68,10 @@ class OutboxRepository:
         payload (dict[str, object]): Outbound side-effect payload.
         idempotency_key (str): Deterministic idempotency key.
         job_lease_epoch (int): Job lease epoch captured at side-effect intent creation.
+        idempotency_policy_version (str): Policy version used for idempotency schema composition.
+        idempotency_schema_version (str | None): Optional idempotency schema version override.
+        idempotency_payload_hash (str | None): Optional payload hash override.
+        idempotency_policy_version_hash (str | None): Optional policy-version hash override.
         next_attempt_at (datetime | None): Optional first-attempt schedule timestamp.
 
         Returns:
@@ -72,6 +82,43 @@ class OutboxRepository:
         if next_attempt_at is not None:
             normalized_next_attempt_at = _ensure_utc_timestamp(next_attempt_at)
 
+        canonical_scope = build_canonical_idempotency_scope(
+            entity_key=entity_key,
+            action_type=action_type,
+            target_identity=target_identity,
+            payload=payload,
+            policy_version=idempotency_policy_version,
+        )
+        should_enforce_schema = (
+            idempotency_schema_version is not None
+            or idempotency_payload_hash is not None
+            or idempotency_policy_version_hash is not None
+        )
+        resolved_schema_version = idempotency_schema_version
+        resolved_payload_hash = idempotency_payload_hash
+        resolved_policy_version_hash = idempotency_policy_version_hash
+        if should_enforce_schema:
+            if idempotency_key != canonical_scope.idempotency_key:
+                raise ValueError('Idempotency key does not match canonical schema scope.')
+            if (
+                idempotency_schema_version is not None
+                and idempotency_schema_version != canonical_scope.schema_version
+            ):
+                raise ValueError('Idempotency schema version does not match canonical schema scope.')
+            if (
+                idempotency_payload_hash is not None
+                and idempotency_payload_hash != canonical_scope.payload_hash
+            ):
+                raise ValueError('Idempotency payload hash does not match canonical schema scope.')
+            if (
+                idempotency_policy_version_hash is not None
+                and idempotency_policy_version_hash != canonical_scope.policy_version_hash
+            ):
+                raise ValueError('Idempotency policy version hash does not match canonical schema scope.')
+            resolved_schema_version = canonical_scope.schema_version
+            resolved_payload_hash = canonical_scope.payload_hash
+            resolved_policy_version_hash = canonical_scope.policy_version_hash
+
         model = OutboxEntryModel(
             outbox_id=outbox_id,
             job_id=job_id,
@@ -81,6 +128,9 @@ class OutboxRepository:
             target_identity=target_identity,
             payload=payload,
             idempotency_key=idempotency_key,
+            idempotency_schema_version=resolved_schema_version,
+            idempotency_payload_hash=resolved_payload_hash,
+            idempotency_policy_version_hash=resolved_policy_version_hash,
             job_lease_epoch=job_lease_epoch,
             status=OutboxStatus.PENDING,
             next_attempt_at=normalized_next_attempt_at,
@@ -109,6 +159,9 @@ class OutboxRepository:
         action_type: OutboxActionType,
         target_identity: str,
         idempotency_key: str,
+        idempotency_schema_version: str | None = None,
+        idempotency_payload_hash: str | None = None,
+        idempotency_policy_version_hash: str | None = None,
     ) -> OutboxEntryModel | None:
 
         '''
@@ -119,19 +172,31 @@ class OutboxRepository:
         action_type (OutboxActionType): Outbox side-effect action type.
         target_identity (str): Deterministic target identity.
         idempotency_key (str): Deterministic idempotency key.
+        idempotency_schema_version (str | None): Optional idempotency schema version filter.
+        idempotency_payload_hash (str | None): Optional payload hash filter.
+        idempotency_policy_version_hash (str | None): Optional policy-version hash filter.
 
         Returns:
         OutboxEntryModel | None: Matching outbox entry model or None when missing.
         '''
 
-        return (
+        query = (
             self._session.query(OutboxEntryModel)
             .filter(OutboxEntryModel.environment == environment)
             .filter(OutboxEntryModel.action_type == action_type)
             .filter(OutboxEntryModel.target_identity == target_identity)
             .filter(OutboxEntryModel.idempotency_key == idempotency_key)
-            .one_or_none()
         )
+        if idempotency_schema_version is not None:
+            query = query.filter(OutboxEntryModel.idempotency_schema_version == idempotency_schema_version)
+        if idempotency_payload_hash is not None:
+            query = query.filter(OutboxEntryModel.idempotency_payload_hash == idempotency_payload_hash)
+        if idempotency_policy_version_hash is not None:
+            query = query.filter(
+                OutboxEntryModel.idempotency_policy_version_hash == idempotency_policy_version_hash,
+            )
+
+        return query.one_or_none()
 
     def list_dispatchable_entries(
         self,

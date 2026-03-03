@@ -351,7 +351,13 @@ def test_outbox_dispatcher_emits_duplicate_side_effect_anomaly_alert(
         action_type: OutboxActionType,
         target_identity: str,
         idempotency_key: str,
+        idempotency_schema_version: str | None = None,
+        idempotency_payload_hash: str | None = None,
+        idempotency_policy_version_hash: str | None = None,
     ) -> OutboxRecord:
+        _ = idempotency_schema_version
+        _ = idempotency_payload_hash
+        _ = idempotency_policy_version_hash
         return OutboxRecord(
             outbox_id='outbox_dispatch_5_confirmed_shadow',
             job_id=created_job.job_id,

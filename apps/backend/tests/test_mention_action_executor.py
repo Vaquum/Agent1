@@ -19,6 +19,7 @@ from agent1.core.ingress_contracts import NormalizedIngressEvent
 from agent1.core.orchestrator import JobOrchestrator
 from agent1.core.services.alert_signal_service import COMMENT_ROUTING_FAILURES_ALERT
 from agent1.core.services.alert_signal_service import LEASE_VIOLATIONS_ALERT
+from agent1.core.services.idempotency_schema import build_canonical_idempotency_key
 from agent1.core.services.mention_action_executor import MentionActionExecutor
 from agent1.core.services.persistence_service import PersistenceService
 from agent1.db.models import CommentTargetModel
@@ -266,6 +267,16 @@ def test_mention_action_executor_posts_comment_and_advances_state(
     assert comment_targets[0].target_type == CommentTargetType.ISSUE
     assert len(outbox_entries) == 1
     assert outbox_entries[0].status == OutboxStatus.CONFIRMED
+    assert outbox_entries[0].idempotency_schema_version == 'v1'
+    assert outbox_entries[0].idempotency_payload_hash is not None
+    assert outbox_entries[0].idempotency_policy_version_hash is not None
+    assert outbox_entries[0].idempotency_key == build_canonical_idempotency_key(
+        entity_key='Vaquum/Agent1#25',
+        action_type=outbox_entries[0].action_type,
+        target_identity=outbox_entries[0].target_identity,
+        payload=outbox_entries[0].payload,
+        policy_version='unversioned',
+    )
 
 
 def test_mention_action_executor_handles_issue_updated_resume_event(
@@ -291,6 +302,42 @@ def test_mention_action_executor_handles_issue_updated_resume_event(
 
     assert len(fake_client.comment_calls) == 1
     assert updated.state == JobState.AWAITING_HUMAN_FEEDBACK
+
+
+def test_mention_action_executor_uses_policy_version_for_idempotency_key(
+    session_factory: sessionmaker[Session],
+) -> None:
+    persistence_service = PersistenceService(session_factory=session_factory)
+    orchestrator = JobOrchestrator(persistence_service=persistence_service)
+    created = orchestrator.create_job(_create_record('Vaquum_Agent1#25:issue_policy'), trace_id='trc_create')
+    fake_client = _FakeGitHubClient()
+    executor = MentionActionExecutor(
+        response_template='Ack {entity_key}',
+        clarification_template='Need clarification for {entity_key}',
+        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
+        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
+        idempotency_policy_version='0.1.0',
+        github_client=fake_client,
+    )
+
+    executor.execute_for_event(
+        normalized_event=_create_normalized_event(
+            'issue_mention',
+            job_id='Vaquum_Agent1#25:issue_policy',
+        ),
+        current_job=created,
+        orchestrator=orchestrator,
+    )
+    with session_factory() as verification_session:
+        outbox_entry = verification_session.query(OutboxEntryModel).one()
+
+    assert outbox_entry.idempotency_key == build_canonical_idempotency_key(
+        entity_key='Vaquum/Agent1#25',
+        action_type=outbox_entry.action_type,
+        target_identity=outbox_entry.target_identity,
+        payload=outbox_entry.payload,
+        policy_version='0.1.0',
+    )
 
 
 def test_mention_action_executor_handles_reviewer_request_event(
@@ -679,6 +726,7 @@ def test_mention_action_executor_routes_review_thread_reply(
     assert len(comment_targets) == 1
     assert comment_targets[0].target_type == CommentTargetType.PR_REVIEW_THREAD
     assert comment_targets[0].review_comment_id == 4401
+    assert comment_targets[0].target_identity == 'Vaquum/Agent1:pr:25:thread:PRRC_kwDOAAABcd:4401'
 
 
 def test_mention_action_executor_blocks_on_missing_review_thread_metadata(
