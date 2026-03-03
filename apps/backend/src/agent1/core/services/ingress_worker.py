@@ -10,7 +10,9 @@ from typing import Protocol
 
 from agent1.core.contracts import EnvironmentName
 from agent1.core.contracts import JobRecord
+from agent1.core.contracts import RuntimeMode
 from agent1.core.services.alert_signal_service import AlertSignalService
+from agent1.core.services.stop_the_line_service import StopTheLineService
 from agent1.core.services.telemetry_runtime import get_tracer
 from agent1.core.services.trace_context import create_trace_id
 from agent1.core.services.trace_context import reset_trace_id
@@ -32,14 +34,18 @@ class IngressWorker:
         ingress_processor: IngressProcessor,
         poll_interval_seconds: int,
         environment: EnvironmentName = EnvironmentName.DEV,
+        runtime_mode: RuntimeMode = RuntimeMode.ACTIVE,
         watcher_lifecycle_service: WatcherLifecycleService | None = None,
         alert_signal_service: AlertSignalService | None = None,
+        stop_the_line_service: StopTheLineService | None = None,
     ) -> None:
         self._ingress_processor = ingress_processor
         self._poll_interval_seconds = poll_interval_seconds
         self._environment = environment
+        self._runtime_mode = runtime_mode
         self._watcher_lifecycle_service = watcher_lifecycle_service
         self._alert_signal_service = alert_signal_service
+        self._stop_the_line_service = stop_the_line_service
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._logger = logging.getLogger(WORKER_LOGGER_NAME)
@@ -90,6 +96,40 @@ class IngressWorker:
                         environment=self._environment,
                         trace_id=trace_id,
                     )
+                    if self._stop_the_line_service is not None:
+                        stop_the_line_window_seconds = (
+                            self._stop_the_line_service.get_evaluation_window_seconds()
+                        )
+                        stop_the_line_signal_values = (
+                            self._alert_signal_service.collect_stop_the_line_signal_values(
+                                environment=self._environment,
+                                window_seconds=stop_the_line_window_seconds,
+                            )
+                        )
+                        stop_the_line_decision = self._stop_the_line_service.evaluate(
+                            signal_values=stop_the_line_signal_values,
+                            current_mode=self._runtime_mode,
+                        )
+                        stop_the_line_alert_id = (
+                            self._alert_signal_service.maybe_emit_stop_the_line_threshold_breach(
+                                environment=self._environment,
+                                trace_id=trace_id,
+                                decision=stop_the_line_decision,
+                                signal_values=stop_the_line_signal_values,
+                            )
+                        )
+                        span.set_attribute(
+                            'agent1.worker.stop_the_line_triggered',
+                            stop_the_line_decision.triggered,
+                        )
+                        span.set_attribute(
+                            'agent1.worker.stop_the_line_target_mode',
+                            stop_the_line_decision.target_mode.value,
+                        )
+                        span.set_attribute(
+                            'agent1.worker.stop_the_line_alert_emitted',
+                            stop_the_line_alert_id is not None,
+                        )
 
                 span.set_attribute('agent1.worker.jobs_processed_count', len(processed_jobs))
                 self._logger.info(

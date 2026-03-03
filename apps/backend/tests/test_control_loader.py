@@ -102,6 +102,61 @@ def _create_valid_controls(root: Path) -> None:
             'poll_interval_seconds': 30,
             'watch_interval_seconds': 30,
             'max_retry_attempts': 5,
+            'rollout_policy': {
+                'health_signals': [
+                    {
+                        'signal_id': 'side_effect_success_rate',
+                        'description': 'Mutating side-effect success rate health signal.',
+                    },
+                    {
+                        'signal_id': 'lease_violation_rate',
+                        'description': 'Lease-violation health signal.',
+                    },
+                ],
+                'stages': [
+                    {
+                        'stage_id': 'dev_shadow',
+                        'description': 'Shadow stage',
+                        'required_health_signals': ['lease_violation_rate'],
+                    },
+                    {
+                        'stage_id': 'dev_active',
+                        'description': 'Active stage',
+                        'required_health_signals': [
+                            'side_effect_success_rate',
+                            'lease_violation_rate',
+                        ],
+                    },
+                ],
+            },
+            'stop_the_line_policy': {
+                'rules': [
+                    {
+                        'signal_id': 'error_rate',
+                        'comparator': 'gte',
+                        'threshold': 0.05,
+                        'evaluation_window_minutes': 15,
+                    },
+                    {
+                        'signal_id': 'lease_violation_rate',
+                        'comparator': 'gte',
+                        'threshold': 0.01,
+                        'evaluation_window_minutes': 15,
+                    },
+                ]
+            },
+            'release_promotion_policy': {
+                'preconditions': [
+                    {
+                        'precondition_id': 'operational_readiness_gate_passed',
+                        'description': 'Operational-readiness validation gate passes.',
+                    },
+                    {
+                        'precondition_id': 'stop_the_line_clear',
+                        'description': 'No active stop-the-line breach remains.',
+                    },
+                ]
+            },
         },
     )
 
@@ -117,11 +172,65 @@ def test_load_control_bundle_parses_valid_controls(tmp_path: Path) -> None:
     assert bundle.policies.agent_actor == 'zero-bang'
     assert bundle.policies.ignored_actor_suffixes == ['[bot]']
     assert bundle.policies.allowed_git_mutation_commands == ['git add', 'git commit', 'git push']
+    assert bundle.runtime.rollout_policy.stages[0].stage_id == 'dev_shadow'
+    assert bundle.runtime.rollout_policy.stages[1].required_health_signals == [
+        'side_effect_success_rate',
+        'lease_violation_rate',
+    ]
+    assert bundle.runtime.stop_the_line_policy.rules[0].signal_id == 'error_rate'
+    assert bundle.runtime.stop_the_line_policy.rules[1].threshold == 0.01
+    assert bundle.runtime.release_promotion_policy.preconditions[0].precondition_id == (
+        'operational_readiness_gate_passed'
+    )
+    assert bundle.runtime.release_promotion_policy.preconditions[1].precondition_id == (
+        'stop_the_line_clear'
+    )
 
 
 def test_load_control_bundle_fails_when_control_file_missing(tmp_path: Path) -> None:
     _create_valid_controls(tmp_path)
     (tmp_path / 'runtime' / CONTROL_FILE_NAME).unlink()
+
+    with pytest.raises(ControlValidationError):
+        load_control_bundle(tmp_path)
+
+
+def test_load_control_bundle_fails_when_rollout_stage_references_unknown_signal(
+    tmp_path: Path,
+) -> None:
+    _create_valid_controls(tmp_path)
+    runtime_path = tmp_path / 'runtime' / CONTROL_FILE_NAME
+    runtime_payload = json.loads(runtime_path.read_text(encoding='utf-8'))
+    runtime_payload['rollout_policy']['stages'][0]['required_health_signals'] = ['unknown_signal']
+    runtime_path.write_text(json.dumps(runtime_payload), encoding='utf-8')
+
+    with pytest.raises(ControlValidationError):
+        load_control_bundle(tmp_path)
+
+
+def test_load_control_bundle_fails_when_stop_the_line_policy_has_duplicate_signal_rules(
+    tmp_path: Path,
+) -> None:
+    _create_valid_controls(tmp_path)
+    runtime_path = tmp_path / 'runtime' / CONTROL_FILE_NAME
+    runtime_payload = json.loads(runtime_path.read_text(encoding='utf-8'))
+    runtime_payload['stop_the_line_policy']['rules'][1]['signal_id'] = 'error_rate'
+    runtime_path.write_text(json.dumps(runtime_payload), encoding='utf-8')
+
+    with pytest.raises(ControlValidationError):
+        load_control_bundle(tmp_path)
+
+
+def test_load_control_bundle_fails_when_release_promotion_policy_has_duplicate_preconditions(
+    tmp_path: Path,
+) -> None:
+    _create_valid_controls(tmp_path)
+    runtime_path = tmp_path / 'runtime' / CONTROL_FILE_NAME
+    runtime_payload = json.loads(runtime_path.read_text(encoding='utf-8'))
+    runtime_payload['release_promotion_policy']['preconditions'][1]['precondition_id'] = (
+        'operational_readiness_gate_passed'
+    )
+    runtime_path.write_text(json.dumps(runtime_payload), encoding='utf-8')
 
     with pytest.raises(ControlValidationError):
         load_control_bundle(tmp_path)

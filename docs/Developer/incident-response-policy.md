@@ -26,6 +26,12 @@
   - acknowledge within 30 minutes,
   - containment decision within 60 minutes.
 
+## Acknowledgement Procedure
+
+- Stop-the-line breach alerts are acknowledged through `POST /dashboard/alerts/stop-the-line/acknowledge`.
+- Acknowledgement payload includes `trace_id`, `alert_id`, `operator_id`, and deterministic acknowledgement note.
+- Acknowledgement events must persist with `action=acknowledge_stop_the_line_alert`.
+
 ## Incident Commander And Communication Cadence
 
 - `Sev1` and `Sev2` incidents require explicit incident commander assignment.

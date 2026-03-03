@@ -24,6 +24,24 @@ Current operations dashboard capability:
 - Runtime safety policy controls now include an explicit allowlist for permitted git mutation commands.
 - Runtime safety policy controls now include per-environment branch mutation namespace patterns.
 - Codex runtime execution now blocks explicit disallowed git mutation commands before task dispatch.
+- Codex runtime execution now blocks explicit branch create/push commands that target branch namespaces outside the current environment policy.
+- Runtime controls define progressive rollout stages with required health signals in machine-readable policy form.
+- Runtime bootstrapping now includes rollout stage-gate evaluation for deployment/runtime control checks.
+- Failed rollout stage gates now trigger deterministic rollback decisions with active-mode downgrade to shadow mode.
+- Runtime controls define severe stop-the-line thresholds for error rate, lease violations, duplicate side effects, and policy enforcement failures.
+- Stop-the-line threshold breaches now trigger deterministic automatic active-to-shadow mode downgrade decisions.
+- Stop-the-line threshold breaches now emit dedicated operational alerts, and operators can persist acknowledgements through `POST /dashboard/alerts/stop-the-line/acknowledge`.
+- Runtime controls define machine-readable release-promotion preconditions linked to operational readiness evidence and policy state.
+- Release workflow path now includes release-promotion precondition gate execution through `tests/operations/release_promotion_gate.py`.
+- Operator release-promotion gate procedure is documented in `docs/Developer/runbooks/release-promotion-gate.md`.
+- Playwright E2E scaffold is available for dashboard operator flows with CI browser setup and smoke execution.
+- Playwright suite now covers operator overview-filter and timeline drill-down flow using deterministic mocked dashboard APIs.
+- Playwright suite now covers operator trace-pivot and selected-event detail inspection flow.
+- Playwright local and CI run instructions are documented in `apps/frontend/tests/e2e/README.md`.
+- PR smoke scenario/spec selection and environment contract are defined in `tests/scenarios/pr-smoke-catalog.json` and `tests/scenarios/pr-smoke-env-contract.md`.
+- PR gates run backend PR smoke via `tests/scenarios/pr_smoke_run.py` and upload backend/frontend smoke artifacts.
+- PR smoke fail policy and rerun procedure are documented in `docs/Developer/runbooks/pr-smoke-failures-and-reruns.md`.
+- Nightly workflow now retains Playwright artifacts, emits failure summaries, and applies timeout/concurrency guardrails for E2E reliability.
 - Operational readiness is tracked in `docs/Developer/operational-readiness.md` and validated by CI gates.
 - Service-level and error-budget policy is defined in `docs/Developer/service-level-policy.md` and enforced by operational-readiness validation.
 - Alert routing severity and runbook linkage is maintained in `docs/Developer/alert-routing-matrix.json`.

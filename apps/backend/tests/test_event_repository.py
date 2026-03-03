@@ -181,3 +181,66 @@ def test_count_recent_failed_transition_events(
         )
 
         assert failed_count == 1
+
+
+def test_list_events_since_filters_by_environment_and_window(
+    session_factory: sessionmaker[Session],
+) -> None:
+    now = datetime.now(timezone.utc)
+    with session_factory() as session:
+        repository = EventRepository(session)
+        repository.append_event(
+            AgentEvent(
+                timestamp=now - timedelta(minutes=10),
+                environment=EnvironmentName.DEV,
+                trace_id='trc_old_dev',
+                job_id='job_old_dev',
+                entity_key='Vaquum/Agent1#30',
+                source=EventSource.AGENT,
+                event_type=EventType.STATE_TRANSITION,
+                status=EventStatus.OK,
+                details={'message': 'old_dev'},
+            )
+        )
+        repository.append_event(
+            AgentEvent(
+                timestamp=now,
+                environment=EnvironmentName.DEV,
+                trace_id='trc_recent_dev',
+                job_id='job_recent_dev',
+                entity_key='Vaquum/Agent1#31',
+                source=EventSource.POLICY,
+                event_type=EventType.API_CALL,
+                status=EventStatus.ERROR,
+                details={'reason': 'mutating_lease_validation_failed'},
+            )
+        )
+        repository.append_event(
+            AgentEvent(
+                timestamp=now,
+                environment=EnvironmentName.PROD,
+                trace_id='trc_recent_prod',
+                job_id='job_recent_prod',
+                entity_key='Vaquum/Agent1#32',
+                source=EventSource.POLICY,
+                event_type=EventType.API_CALL,
+                status=EventStatus.ERROR,
+                details={'reason': 'mutating_lease_validation_failed'},
+            )
+        )
+        session.commit()
+
+        recent_dev_events = repository.list_events_since(
+            environment=EnvironmentName.DEV,
+            window_start=now - timedelta(minutes=5),
+        )
+        recent_dev_policy_events = repository.list_events_since(
+            environment=EnvironmentName.DEV,
+            window_start=now - timedelta(minutes=5),
+            source=EventSource.POLICY,
+        )
+
+        assert len(recent_dev_events) == 1
+        assert recent_dev_events[0].trace_id == 'trc_recent_dev'
+        assert len(recent_dev_policy_events) == 1
+        assert recent_dev_policy_events[0].trace_id == 'trc_recent_dev'

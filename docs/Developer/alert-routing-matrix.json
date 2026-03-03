@@ -24,6 +24,12 @@
           "runbook": "docs/Developer/runbooks/review-thread-routing-failures.md",
           "include_trace_id": true,
           "include_job_id": true
+        },
+        {
+          "name": "stop_the_line_threshold_breach",
+          "runbook": "docs/Developer/runbooks/stop-the-line-alerts.md",
+          "include_trace_id": true,
+          "include_job_id": true
         }
       ]
     },

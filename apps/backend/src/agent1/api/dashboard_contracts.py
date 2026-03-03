@@ -108,6 +108,24 @@ class DashboardJobTimelineResponse(BaseModel):
     action_attempts: list[DashboardActionAttemptSummary]
 
 
+class StopTheLineAcknowledgeRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    trace_id: str = Field(min_length=1)
+    alert_id: str = Field(min_length=1)
+    operator_id: str = Field(min_length=1)
+    acknowledgement_note: str = Field(min_length=1)
+
+
+class StopTheLineAcknowledgeResponse(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    trace_id: str = Field(min_length=1)
+    alert_id: str = Field(min_length=1)
+    operator_id: str = Field(min_length=1)
+    acknowledged_at: datetime
+
+
 __all__ = [
     'DashboardActionAttemptSummary',
     'DashboardEventSummary',
@@ -117,4 +135,6 @@ __all__ = [
     'DashboardOverviewResponse',
     'DashboardPageSummary',
     'DashboardTransitionSummary',
+    'StopTheLineAcknowledgeRequest',
+    'StopTheLineAcknowledgeResponse',
 ]

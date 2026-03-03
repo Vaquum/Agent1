@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
+from pydantic import model_validator
 
 from agent1.core.contracts import JobKind
 from agent1.core.contracts import JobState
@@ -109,6 +112,107 @@ class JobsControl(BaseModel):
     rules: list[JobLifecycleRule] = Field(min_length=1)
 
 
+class RolloutHealthSignalControl(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    signal_id: str = Field(min_length=1)
+    description: str = Field(min_length=1)
+
+
+class RolloutStageControl(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    stage_id: str = Field(min_length=1)
+    description: str = Field(min_length=1)
+    required_health_signals: list[str] = Field(min_length=1)
+
+
+class RolloutPolicyControl(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    health_signals: list[RolloutHealthSignalControl] = Field(min_length=1)
+    stages: list[RolloutStageControl] = Field(min_length=1)
+
+    @model_validator(mode='after')
+    def validate_rollout_references(self) -> 'RolloutPolicyControl':
+        signal_ids: set[str] = set()
+        for signal in self.health_signals:
+            if signal.signal_id in signal_ids:
+                message = f'Duplicate rollout health signal id: {signal.signal_id}'
+                raise ValueError(message)
+            signal_ids.add(signal.signal_id)
+
+        stage_ids: set[str] = set()
+        for stage in self.stages:
+            if stage.stage_id in stage_ids:
+                message = f'Duplicate rollout stage id: {stage.stage_id}'
+                raise ValueError(message)
+            stage_ids.add(stage.stage_id)
+
+            for required_signal_id in stage.required_health_signals:
+                if required_signal_id not in signal_ids:
+                    message = (
+                        'Unknown rollout health signal in stage '
+                        f'{stage.stage_id}: {required_signal_id}'
+                    )
+                    raise ValueError(message)
+
+        return self
+
+
+class StopTheLineThresholdRuleControl(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    signal_id: str = Field(min_length=1)
+    comparator: Literal['gt', 'gte', 'lt', 'lte']
+    threshold: float = Field(ge=0.0)
+    evaluation_window_minutes: int = Field(gt=0)
+
+
+class StopTheLinePolicyControl(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    rules: list[StopTheLineThresholdRuleControl] = Field(min_length=1)
+
+    @model_validator(mode='after')
+    def validate_unique_rule_signals(self) -> 'StopTheLinePolicyControl':
+        signal_ids: set[str] = set()
+        for rule in self.rules:
+            if rule.signal_id in signal_ids:
+                message = f'Duplicate stop-the-line rule signal id: {rule.signal_id}'
+                raise ValueError(message)
+            signal_ids.add(rule.signal_id)
+
+        return self
+
+
+class ReleasePromotionPreconditionControl(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    precondition_id: str = Field(min_length=1)
+    description: str = Field(min_length=1)
+
+
+class ReleasePromotionPolicyControl(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    preconditions: list[ReleasePromotionPreconditionControl] = Field(min_length=1)
+
+    @model_validator(mode='after')
+    def validate_unique_precondition_ids(self) -> 'ReleasePromotionPolicyControl':
+        precondition_ids: set[str] = set()
+        for precondition in self.preconditions:
+            if precondition.precondition_id in precondition_ids:
+                message = (
+                    'Duplicate release-promotion precondition id: '
+                    f'{precondition.precondition_id}'
+                )
+                raise ValueError(message)
+            precondition_ids.add(precondition.precondition_id)
+
+        return self
+
+
 class RuntimeControl(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
@@ -121,6 +225,9 @@ class RuntimeControl(BaseModel):
     poll_interval_seconds: int = Field(gt=0)
     watch_interval_seconds: int = Field(gt=0)
     max_retry_attempts: int = Field(ge=0)
+    rollout_policy: RolloutPolicyControl
+    stop_the_line_policy: StopTheLinePolicyControl
+    release_promotion_policy: ReleasePromotionPolicyControl
 
 
 class ControlBundle(BaseModel):
@@ -144,5 +251,12 @@ __all__ = [
     'PoliciesControl',
     'PromptsControl',
     'RuntimeControl',
+    'RolloutHealthSignalControl',
+    'RolloutPolicyControl',
+    'RolloutStageControl',
+    'ReleasePromotionPreconditionControl',
+    'ReleasePromotionPolicyControl',
+    'StopTheLinePolicyControl',
+    'StopTheLineThresholdRuleControl',
     'StylesControl',
 ]

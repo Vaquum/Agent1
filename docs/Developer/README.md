@@ -10,6 +10,14 @@ This directory contains developer-facing documentation for architecture, workflo
   - `apps/backend/src/agent1/core/control_loader.py`
 - Startup is fail-fast on invalid controls through `apps/backend/src/agent1/main.py`.
 - Default control payloads live under `controls/*/default.json`.
+- Runtime controls now include machine-readable progressive-rollout stages and required health-signal mappings under `controls/runtime/default.json` (`rollout_policy`).
+- Rollout stage-gate evaluation is implemented under `apps/backend/src/agent1/core/services/rollout_stage_gate.py` and wired into application runtime state.
+- Rollout guard rollback-trigger decisions are implemented under `apps/backend/src/agent1/core/services/rollout_guard_service.py` with active-mode downgrade semantics (`active -> shadow`) on failed stage gates.
+- Runtime controls now include machine-readable stop-the-line threshold rules under `controls/runtime/default.json` (`stop_the_line_policy`) for severe error, lease, duplicate-side-effect, and policy-failure signals.
+- Runtime controls now include machine-readable release-promotion preconditions under `controls/runtime/default.json` (`release_promotion_policy`) linked to readiness evidence and policy state.
+- Stop-the-line threshold evaluation and automatic mode-downgrade decisions are implemented under `apps/backend/src/agent1/core/services/stop_the_line_service.py` and wired into application runtime state.
+- Stop-the-line threshold breach alert emission and operator acknowledgement persistence are implemented in `apps/backend/src/agent1/core/services/alert_signal_service.py`, including `POST /dashboard/alerts/stop-the-line/acknowledge` operator flow.
+- Release-promotion precondition evaluation is implemented under `apps/backend/src/agent1/core/services/release_promotion_gate_service.py` and wired into application runtime state.
 - Dashboard API baseline is defined under:
   - `apps/backend/src/agent1/api/dashboard.py`
   - `apps/backend/src/agent1/api/dashboard_contracts.py`
@@ -108,6 +116,7 @@ This directory contains developer-facing documentation for architecture, workflo
   - allowed git mutation command allowlist is defined in policy controls for codex-runtime enforcement,
   - allowed branch mutation namespace patterns are defined per environment in policy controls,
   - codex runtime execution blocks explicit git mutation commands that are denied or outside allowlist policy,
+  - codex runtime execution blocks explicit branch create/push commands when branch targets are outside configured environment namespace patterns,
   - operator response for codex git policy denials is documented in `docs/Developer/runbooks/git-mutation-policy-denials.md`,
   - GitHub capability checks are explicit and default-deny by policy,
   - policy resolution fails closed when control loading is missing or invalid.
@@ -133,6 +142,8 @@ This directory contains developer-facing documentation for architecture, workflo
   - `apps/backend/src/agent1/core/services/ingress_worker.py`
 - Operational alert-signal guarantees:
   - alert signals are emitted for lease violations, duplicate side-effect anomalies, comment-routing failures, outbox backlog growth, and elevated failed transition rates,
+  - stop-the-line threshold breaches emit dedicated alert signals with deterministic `alert_id`, rollback decision payload, and runbook linkage,
+  - operator acknowledgement for stop-the-line alerts is persisted as explicit event-journal records linked to `alert_id`,
   - alert payloads include deterministic runbook linkage and always carry `trace_id` and `job_id`.
 - Codex execution baseline is defined under:
   - `apps/backend/src/agent1/adapters/codex/contracts.py`
@@ -176,8 +187,26 @@ This directory contains developer-facing documentation for architecture, workflo
 - CI gate workflows are defined under:
   - `.github/workflows/pr-gates.yml` (PR quality and environment safety checks)
   - `.github/workflows/nightly-full-suite.yml` (nightly backend and frontend full-suite execution)
+  - `.github/workflows/release-promotion-gate.yml` (main-branch release-promotion precondition gate)
+- Playwright E2E scaffold is defined under:
+  - `apps/frontend/playwright.config.ts`
+  - `apps/frontend/tests/e2e/fixtures.ts`
+  - `apps/frontend/tests/e2e/overview-shell.spec.ts`
+- Playwright operator-flow coverage for overview filters and timeline drill-down is defined under:
+  - `apps/frontend/tests/e2e/operator-overview-and-timeline.spec.ts`
+- Playwright operator-flow coverage for trace pivot and event-detail inspection is defined under:
+  - `apps/frontend/tests/e2e/operator-trace-pivot-and-event-detail.spec.ts`
+- Playwright local/CI run instructions and selector contract are documented under:
+  - `apps/frontend/tests/e2e/README.md`
+- PR and nightly workflows include Playwright browser setup (`playwright install --with-deps chromium`) and smoke execution.
+- `pr-gates` uploads frontend Playwright artifacts (`playwright-report`, `test-results`) and backend PR smoke junit artifact.
+- `nightly-full-suite` uploads retained Playwright artifacts (`retention-days: 14`) and emits failure summary output in workflow step summary.
+- `nightly-full-suite` now enforces per-job timeout guardrails in addition to schedule and concurrency guards.
 - Scenario and live smoke runners are defined under:
   - `tests/scenarios/catalog.json` (deterministic scenario ID to pytest node binding)
+  - `tests/scenarios/pr-smoke-catalog.json` (minimal PR smoke scenario/spec selection)
+  - `tests/scenarios/pr-smoke-env-contract.md` (PR smoke environment contract)
+  - `tests/scenarios/pr_smoke_run.py` (backend PR smoke runner for CI + junit output)
   - `tests/scenarios/run.py` (scenario harness executor)
   - `tests/live/test_github_sandbox_smoke.py` (GitHub sandbox smoke assertions)
   - `tests/live/run.py` (live smoke executor)
@@ -189,7 +218,10 @@ This directory contains developer-facing documentation for architecture, workflo
   - `docs/Developer/release-control.json` (release freeze and exception status control)
   - `docs/Developer/rollback-rehearsal-log.md` (rollback rehearsal evidence log)
   - `tests/operations/run.py` (required runbook and evidence validator)
+  - `tests/operations/release_promotion_gate.py` (release-promotion precondition evaluator)
   - `tests/operations/README.md` (operations gate index)
+  - `docs/Developer/runbooks/release-promotion-gate.md` (operator release-promotion gate procedure)
+  - `docs/Developer/runbooks/pr-smoke-failures-and-reruns.md` (PR smoke fail policy and rerun procedure)
 - Deployment artifacts and environment contract are defined under:
   - `apps/backend/Dockerfile` (backend runtime container image)
   - `apps/backend/docker/entrypoint.sh` (backend startup and migration command)

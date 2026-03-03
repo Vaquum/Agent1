@@ -39,6 +39,7 @@ REQUIRED_ALERT_NAMES: tuple[str, ...] = (
     'lease_violations',
     'duplicate_side_effect_anomalies',
     'comment_routing_failures',
+    'stop_the_line_threshold_breach',
     'outbox_backlog_growth',
     'elevated_failed_transition_rates',
 )
@@ -47,6 +48,7 @@ REQUIRED_INCIDENT_HEADINGS: tuple[str, ...] = (
     '## Last Updated',
     '## Severity Levels And Ownership Routing',
     '## Response-Time Targets',
+    '## Acknowledgement Procedure',
     '## Incident Commander And Communication Cadence',
     '## Post-Incident Review And Corrective Action',
     '## Corrective Action Feedback Loop',

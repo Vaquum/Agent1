@@ -8,7 +8,11 @@ from fastapi import Query
 
 from agent1.api.dashboard_contracts import DashboardJobTimelineResponse
 from agent1.api.dashboard_contracts import DashboardOverviewResponse
+from agent1.api.dashboard_contracts import StopTheLineAcknowledgeRequest
+from agent1.api.dashboard_contracts import StopTheLineAcknowledgeResponse
+from agent1.core.contracts import EnvironmentName
 from agent1.core.contracts import EventStatus
+from agent1.core.services.alert_signal_service import AlertSignalService
 from agent1.core.services.dashboard_service import DashboardService
 
 router = APIRouter()
@@ -24,6 +28,18 @@ def get_dashboard_service() -> DashboardService:
     '''
 
     return DashboardService()
+
+
+def get_alert_signal_service() -> AlertSignalService:
+
+    '''
+    Create alert-signal service dependency instance for dashboard alert routes.
+
+    Returns:
+    AlertSignalService: Alert-signal service instance.
+    '''
+
+    return AlertSignalService()
 
 
 @router.get('/dashboard/overview', response_model=DashboardOverviewResponse)
@@ -95,9 +111,46 @@ def get_dashboard_job_timeline(
     return timeline
 
 
+@router.post(
+    '/dashboard/alerts/stop-the-line/acknowledge',
+    response_model=StopTheLineAcknowledgeResponse,
+)
+def acknowledge_stop_the_line_alert(
+    request: StopTheLineAcknowledgeRequest,
+    alert_signal_service: AlertSignalService = Depends(get_alert_signal_service),
+) -> StopTheLineAcknowledgeResponse:
+
+    '''
+    Create stop-the-line alert acknowledgement record from operator acknowledgement payload.
+
+    Args:
+    request (StopTheLineAcknowledgeRequest): Operator acknowledgement request payload.
+    alert_signal_service (AlertSignalService): Alert-signal service dependency.
+
+    Returns:
+    StopTheLineAcknowledgeResponse: Persisted acknowledgement response payload.
+    '''
+
+    acknowledged_at = alert_signal_service.acknowledge_stop_the_line_alert(
+        environment=EnvironmentName.DEV,
+        trace_id=request.trace_id,
+        alert_id=request.alert_id,
+        operator_id=request.operator_id,
+        acknowledgement_note=request.acknowledgement_note,
+    )
+    return StopTheLineAcknowledgeResponse(
+        trace_id=request.trace_id,
+        alert_id=request.alert_id,
+        operator_id=request.operator_id,
+        acknowledged_at=acknowledged_at,
+    )
+
+
 __all__ = [
     'router',
     'get_dashboard_job_timeline',
     'get_dashboard_overview',
+    'acknowledge_stop_the_line_alert',
+    'get_alert_signal_service',
     'get_dashboard_service',
 ]

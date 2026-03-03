@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import sys
+
+from agent1.adapters.codex.client import SubprocessCodexCliAdapter
 from agent1.adapters.codex.contracts import CodexTaskInput
 from agent1.adapters.codex.contracts import StreamEventHandler
 from agent1.config.settings import Settings
+from agent1.core.contracts import EnvironmentName
 from agent1.core.contracts import ExecutionResult
 from agent1.core.contracts import ExecutionStatus
 from agent1.core.control_schemas import PoliciesControl
@@ -135,3 +139,119 @@ def test_codex_executor_blocks_explicit_denylist_git_command() -> None:
     assert result.status == ExecutionStatus.BLOCKED
     assert fake_adapter.last_task_input is None
     assert result.metadata['blocked_git_command'] == 'git push --force origin HEAD'
+
+
+def test_codex_executor_allows_push_to_allowed_dev_branch_namespace() -> None:
+    fake_adapter = _FakeCodexAdapter()
+    executor = CodexExecutor(
+        codex_adapter=fake_adapter,
+        settings=Settings(codex_cli_timeout_seconds=12),
+        policies=_create_policies(['git push']),
+        runtime_environment=EnvironmentName.DEV,
+    )
+
+    result = executor.execute_task(
+        task_id='task_branch_allowed',
+        prompt='git push origin sandbox/feature-branch',
+    )
+
+    assert result.status == ExecutionStatus.SUCCEEDED
+    assert fake_adapter.last_task_input is not None
+
+
+def test_codex_executor_blocks_push_to_disallowed_dev_branch_namespace() -> None:
+    fake_adapter = _FakeCodexAdapter()
+    executor = CodexExecutor(
+        codex_adapter=fake_adapter,
+        settings=Settings(codex_cli_timeout_seconds=12),
+        policies=_create_policies(['git push']),
+        runtime_environment=EnvironmentName.DEV,
+    )
+
+    result = executor.execute_task(
+        task_id='task_branch_blocked',
+        prompt='git push origin release/feature-branch',
+    )
+
+    assert result.status == ExecutionStatus.BLOCKED
+    assert fake_adapter.last_task_input is None
+    assert result.metadata['blocked_git_command'] == 'git push origin release/feature-branch'
+
+
+def test_codex_executor_allows_checkout_branch_creation_for_allowed_namespace() -> None:
+    fake_adapter = _FakeCodexAdapter()
+    executor = CodexExecutor(
+        codex_adapter=fake_adapter,
+        settings=Settings(codex_cli_timeout_seconds=12),
+        policies=_create_policies(['git checkout']),
+        runtime_environment=EnvironmentName.DEV,
+    )
+
+    result = executor.execute_task(
+        task_id='task_checkout_allowed',
+        prompt='git checkout -b sandbox/feature-branch',
+    )
+
+    assert result.status == ExecutionStatus.SUCCEEDED
+    assert fake_adapter.last_task_input is not None
+
+
+def test_codex_executor_blocks_checkout_branch_creation_for_disallowed_namespace() -> None:
+    fake_adapter = _FakeCodexAdapter()
+    executor = CodexExecutor(
+        codex_adapter=fake_adapter,
+        settings=Settings(codex_cli_timeout_seconds=12),
+        policies=_create_policies(['git checkout']),
+        runtime_environment=EnvironmentName.DEV,
+    )
+
+    result = executor.execute_task(
+        task_id='task_checkout_blocked',
+        prompt='git checkout -b release/feature-branch',
+    )
+
+    assert result.status == ExecutionStatus.BLOCKED
+    assert fake_adapter.last_task_input is None
+    assert result.metadata['blocked_git_command'] == 'git checkout -b release/feature-branch'
+
+
+def test_codex_executor_namespace_policy_integration_allows_push() -> None:
+    adapter = SubprocessCodexCliAdapter(
+        base_command=[sys.executable, '-c', 'print("adapter-ran")'],
+        default_timeout_seconds=5,
+    )
+    executor = CodexExecutor(
+        codex_adapter=adapter,
+        settings=Settings(codex_cli_timeout_seconds=5),
+        policies=_create_policies(['git push']),
+        runtime_environment=EnvironmentName.DEV,
+    )
+
+    result = executor.execute_task(
+        task_id='task_namespace_integration_allowed',
+        prompt='git push origin sandbox/feature-branch',
+    )
+
+    assert result.status == ExecutionStatus.SUCCEEDED
+    assert 'adapter-ran' in result.metadata.get('stdout', '')
+
+
+def test_codex_executor_namespace_policy_integration_blocks_push() -> None:
+    adapter = SubprocessCodexCliAdapter(
+        base_command=[sys.executable, '-c', 'print("adapter-ran")'],
+        default_timeout_seconds=5,
+    )
+    executor = CodexExecutor(
+        codex_adapter=adapter,
+        settings=Settings(codex_cli_timeout_seconds=5),
+        policies=_create_policies(['git push']),
+        runtime_environment=EnvironmentName.DEV,
+    )
+
+    result = executor.execute_task(
+        task_id='task_namespace_integration_blocked',
+        prompt='git push origin release/feature-branch',
+    )
+
+    assert result.status == ExecutionStatus.BLOCKED
+    assert result.metadata['blocked_git_command'] == 'git push origin release/feature-branch'

@@ -12,6 +12,7 @@ from agent1.core.contracts import CommentTargetRecord
 from agent1.core.contracts import EntityRecord
 from agent1.core.contracts import EntityType
 from agent1.core.contracts import EnvironmentName
+from agent1.core.contracts import EventSource
 from agent1.core.contracts import JobRecord
 from agent1.core.contracts import JobState
 from agent1.core.contracts import OutboxActionType
@@ -24,6 +25,7 @@ from agent1.core.watcher import WatcherState
 from agent1.core.services.structured_event_logger import log_agent_event
 from agent1.db.models import ActionAttemptModel
 from agent1.db.models import CommentTargetModel
+from agent1.db.models import EventJournalModel
 from agent1.db.models import JobModel
 from agent1.db.models import EntityModel
 from agent1.db.models import OutboxEntryModel
@@ -37,6 +39,31 @@ from agent1.db.repositories.job_repository import JobRepository
 from agent1.db.repositories.outbox_repository import OutboxRepository
 from agent1.db.repositories.watcher_repository import WatcherRepository
 from agent1.db.session import create_session_factory
+
+
+def _to_agent_event(model: EventJournalModel) -> AgentEvent:
+
+    '''
+    Create typed agent-event contract from persisted event-journal model row.
+
+    Args:
+    model (EventJournalModel): Persisted event-journal model row.
+
+    Returns:
+    AgentEvent: Typed event contract payload.
+    '''
+
+    return AgentEvent(
+        timestamp=model.timestamp,
+        environment=model.environment,
+        trace_id=model.trace_id,
+        job_id=model.job_id,
+        entity_key=model.entity_key,
+        source=model.source,
+        event_type=model.event_type,
+        status=model.status,
+        details=model.details,
+    )
 
 
 def _to_job_record(model: JobModel) -> JobRecord:
@@ -1099,6 +1126,34 @@ class PersistenceService:
         with self._session_factory() as session:
             repository = EventRepository(session)
             return repository.count_recent_failed_transition_events(window_start)
+
+    def list_events_since(
+        self,
+        environment: EnvironmentName,
+        window_start: datetime,
+        source: EventSource | None = None,
+    ) -> list[AgentEvent]:
+
+        '''
+        Create typed event list for one environment since one inclusive timestamp.
+
+        Args:
+        environment (EnvironmentName): Runtime environment value.
+        window_start (datetime): Inclusive lower bound for event timestamps.
+        source (EventSource | None): Optional event source filter.
+
+        Returns:
+        list[AgentEvent]: Ordered typed events since timestamp.
+        '''
+
+        with self._session_factory() as session:
+            repository = EventRepository(session)
+            models = repository.list_events_since(
+                environment=environment,
+                window_start=window_start,
+                source=source,
+            )
+            return [_to_agent_event(model) for model in models]
 
     def upsert_watcher_state(
         self,

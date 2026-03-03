@@ -48,8 +48,8 @@ Tracking list of remaining items against `spec.md` acceptance criteria.
 - [x] P1: Git allowlist slice 2 - enforce allowlist in codex runtime execution path.
 - [x] P1: Git allowlist slice 3 - add deny-path tests and runbook guidance.
 - [x] P1: Branch namespace slice 1 - define allowed mutation branch patterns per environment.
-- [ ] P1: Branch namespace slice 2 - enforce branch pattern checks before mutation/push.
-- [ ] P1: Branch namespace slice 3 - add integration tests for allowed and denied namespaces.
+- [x] P1: Branch namespace slice 2 - enforce branch pattern checks before mutation/push.
+- [x] P1: Branch namespace slice 3 - add integration tests for allowed and denied namespaces.
 - [ ] P3: Actions pinning slice 1 - pin all third-party GitHub Actions to immutable SHAs.
 - [ ] P3: Actions pinning slice 2 - add CI check that fails on unpinned Actions.
 - [ ] P3: CI token scope slice 1 - set minimal per-job `permissions` in all workflows.
@@ -70,16 +70,16 @@ Tracking list of remaining items against `spec.md` acceptance criteria.
 
 ## Testing And CI
 
-- [ ] P2: Playwright suite slice 1 - scaffold Playwright config, fixtures, and CI browser setup.
-- [ ] P2: Playwright suite slice 2 - cover operator flow for overview filters and timeline drill-down.
-- [ ] P2: Playwright suite slice 3 - cover operator flow for trace pivot and event detail inspection.
-- [ ] P2: Playwright suite slice 4 - stabilize selectors/data and document run instructions.
-- [ ] P2: PR smoke gate slice 1 - define minimal E2E smoke scenario set and env contract.
-- [ ] P2: PR smoke gate slice 2 - wire smoke execution into `pr-gates` with artifact upload.
-- [ ] P2: PR smoke gate slice 3 - document fail policy and rerun procedure.
-- [ ] P2: Nightly E2E slice 1 - add browser scenarios to nightly workflow.
-- [ ] P2: Nightly E2E slice 2 - add artifact retention and failure summary output.
-- [ ] P2: Nightly E2E slice 3 - add schedule/timeout/concurrency guardrails.
+- [x] P2: Playwright suite slice 1 - scaffold Playwright config, fixtures, and CI browser setup.
+- [x] P2: Playwright suite slice 2 - cover operator flow for overview filters and timeline drill-down.
+- [x] P2: Playwright suite slice 3 - cover operator flow for trace pivot and event detail inspection.
+- [x] P2: Playwright suite slice 4 - stabilize selectors/data and document run instructions.
+- [x] P2: PR smoke gate slice 1 - define minimal E2E smoke scenario set and env contract.
+- [x] P2: PR smoke gate slice 2 - wire smoke execution into `pr-gates` with artifact upload.
+- [x] P2: PR smoke gate slice 3 - document fail policy and rerun procedure.
+- [x] P2: Nightly E2E slice 1 - add browser scenarios to nightly workflow.
+- [x] P2: Nightly E2E slice 2 - add artifact retention and failure summary output.
+- [x] P2: Nightly E2E slice 3 - add schedule/timeout/concurrency guardrails.
 - [ ] P2: Scenario direct-assignment slice 1 - implement deterministic pytest scenario.
 - [ ] P2: Scenario direct-assignment slice 2 - register explicit scenario ID in catalog.
 - [ ] P2: Scenario PR-mention slice 1 - implement deterministic pytest scenario.
@@ -97,15 +97,15 @@ Tracking list of remaining items against `spec.md` acceptance criteria.
 - [x] P0: Add frontend Dockerfile (or unified deployment container strategy) for production deployment.
 - [x] P0: Add Render deployment configuration and environment contract.
 - [x] P0: Integrate Alembic migration execution into release workflow automation.
-- [ ] P1: Progressive rollout slice 1 - define rollout stages and required health signals.
-- [ ] P1: Progressive rollout slice 2 - implement stage-gate evaluator in deployment/runtime controls.
-- [ ] P1: Progressive rollout slice 3 - add rollback trigger on stage-gate failure with tests + docs.
-- [ ] P1: Stop-the-line slice 1 - define severe threshold rules (error rate, lease, duplicate side-effect, policy failure).
-- [ ] P1: Stop-the-line slice 2 - implement automatic mode downgrade/pause on threshold breach.
-- [ ] P1: Stop-the-line slice 3 - emit stop-the-line alerts and operator acknowledgement flow.
-- [ ] P1: Release-promotion slice 1 - define promotion preconditions from readiness evidence + policy state.
-- [ ] P1: Release-promotion slice 2 - wire promotion gate into release workflow path.
-- [ ] P1: Release-promotion slice 3 - add pass/fail tests and operator documentation.
+- [x] P1: Progressive rollout slice 1 - define rollout stages and required health signals.
+- [x] P1: Progressive rollout slice 2 - implement stage-gate evaluator in deployment/runtime controls.
+- [x] P1: Progressive rollout slice 3 - add rollback trigger on stage-gate failure with tests + docs.
+- [x] P1: Stop-the-line slice 1 - define severe threshold rules (error rate, lease, duplicate side-effect, policy failure).
+- [x] P1: Stop-the-line slice 2 - implement automatic mode downgrade/pause on threshold breach.
+- [x] P1: Stop-the-line slice 3 - emit stop-the-line alerts and operator acknowledgement flow.
+- [x] P1: Release-promotion slice 1 - define promotion preconditions from readiness evidence + policy state.
+- [x] P1: Release-promotion slice 2 - wire promotion gate into release workflow path.
+- [x] P1: Release-promotion slice 3 - add pass/fail tests and operator documentation.
 
 ## Observability And Alerting Runtime
 

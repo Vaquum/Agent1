@@ -18,8 +18,12 @@ from agent1.core.ingress_normalizer import GitHubIngressNormalizer
 from agent1.core.services.alert_signal_service import AlertSignalService
 from agent1.core.services.codex_executor import CodexExecutor
 from agent1.core.services.ingress_worker import IngressWorker
+from agent1.core.services.release_promotion_gate_service import ReleasePromotionGateService
+from agent1.core.services.rollout_guard_service import RolloutGuardService
+from agent1.core.services.rollout_stage_gate import RolloutStageGateEvaluator
 from agent1.core.services.runtime_scope_guard import RuntimeScopeGuard
 from agent1.core.services.sentry_runtime import initialize_sentry
+from agent1.core.services.stop_the_line_service import StopTheLineService
 from agent1.core.services.telemetry_runtime import initialize_telemetry
 from agent1.core.services.trace_context import TRACE_HEADER_NAME
 from agent1.core.services.trace_context import get_or_create_trace_id
@@ -100,6 +104,18 @@ def create_application() -> FastAPI:
     settings = get_settings()
     sentry_enabled = initialize_sentry()
     codex_executor = CodexExecutor(policies=control_bundle.policies)
+    rollout_stage_gate_evaluator = RolloutStageGateEvaluator(
+        rollout_policy=control_bundle.runtime.rollout_policy,
+    )
+    rollout_guard_service = RolloutGuardService(
+        stage_gate_evaluator=rollout_stage_gate_evaluator,
+    )
+    release_promotion_gate_service = ReleasePromotionGateService(
+        release_promotion_policy=control_bundle.runtime.release_promotion_policy,
+    )
+    stop_the_line_service = StopTheLineService(
+        stop_the_line_policy=control_bundle.runtime.stop_the_line_policy,
+    )
     mention_response_template = control_bundle.prompts.templates['mention_response'].task_prompt
     clarification_template = control_bundle.prompts.templates['issue_clarification'].task_prompt
     reviewer_follow_up_template = control_bundle.prompts.templates['reviewer_follow_up'].task_prompt
@@ -140,8 +156,10 @@ def create_application() -> FastAPI:
         ingress_processor=ingress_coordinator,
         poll_interval_seconds=control_bundle.runtime.poll_interval_seconds,
         environment=EnvironmentName.DEV,
+        runtime_mode=control_bundle.runtime.mode,
         watcher_lifecycle_service=watcher_lifecycle_service,
         alert_signal_service=alert_signal_service,
+        stop_the_line_service=stop_the_line_service,
     )
     runtime_scope_guard = RuntimeScopeGuard(
         environment=EnvironmentName.DEV,
@@ -172,6 +190,10 @@ def create_application() -> FastAPI:
     application.state.ingress_worker = ingress_worker
     application.state.runtime_scope_guard = runtime_scope_guard
     application.state.codex_executor = codex_executor
+    application.state.rollout_stage_gate_evaluator = rollout_stage_gate_evaluator
+    application.state.rollout_guard_service = rollout_guard_service
+    application.state.release_promotion_gate_service = release_promotion_gate_service
+    application.state.stop_the_line_service = stop_the_line_service
     application.state.alert_signal_service = alert_signal_service
     application.state.watcher_lifecycle_service = watcher_lifecycle_service
     application.include_router(dashboard_router)

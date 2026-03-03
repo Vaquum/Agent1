@@ -9,5 +9,138 @@
   "sandbox_branch_prefix": "sandbox/",
   "poll_interval_seconds": 30,
   "watch_interval_seconds": 30,
-  "max_retry_attempts": 5
+  "max_retry_attempts": 5,
+  "rollout_policy": {
+    "health_signals": [
+      {
+        "signal_id": "side_effect_success_rate",
+        "description": "Mutating side-effect success rate remains within policy target."
+      },
+      {
+        "signal_id": "trigger_to_first_action_latency",
+        "description": "Trigger-to-first-action latency remains within SLO target."
+      },
+      {
+        "signal_id": "lease_violation_rate",
+        "description": "Lease-violation rate remains below severe threshold."
+      },
+      {
+        "signal_id": "duplicate_side_effect_rate",
+        "description": "Duplicate side-effect anomaly rate remains below severe threshold."
+      },
+      {
+        "signal_id": "policy_enforcement_failure_rate",
+        "description": "Policy enforcement failure rate remains below severe threshold."
+      }
+    ],
+    "stages": [
+      {
+        "stage_id": "dev_shadow",
+        "description": "Shadow-mode baseline validation with zero-write parity checks.",
+        "required_health_signals": [
+          "lease_violation_rate",
+          "policy_enforcement_failure_rate"
+        ]
+      },
+      {
+        "stage_id": "dev_active",
+        "description": "Sandbox active-mode rollout for end-to-end write-path validation.",
+        "required_health_signals": [
+          "side_effect_success_rate",
+          "lease_violation_rate",
+          "duplicate_side_effect_rate",
+          "policy_enforcement_failure_rate"
+        ]
+      },
+      {
+        "stage_id": "prod_canary",
+        "description": "Initial production canary stage with strict reliability and safety checks.",
+        "required_health_signals": [
+          "side_effect_success_rate",
+          "trigger_to_first_action_latency",
+          "lease_violation_rate",
+          "duplicate_side_effect_rate",
+          "policy_enforcement_failure_rate"
+        ]
+      },
+      {
+        "stage_id": "prod_ramp",
+        "description": "Incremental production ramp with sustained health-signal compliance.",
+        "required_health_signals": [
+          "side_effect_success_rate",
+          "trigger_to_first_action_latency",
+          "lease_violation_rate",
+          "duplicate_side_effect_rate",
+          "policy_enforcement_failure_rate"
+        ]
+      },
+      {
+        "stage_id": "prod_full",
+        "description": "Full production rollout gate after stable ramp-stage performance.",
+        "required_health_signals": [
+          "side_effect_success_rate",
+          "trigger_to_first_action_latency",
+          "lease_violation_rate",
+          "duplicate_side_effect_rate",
+          "policy_enforcement_failure_rate"
+        ]
+      }
+    ]
+  },
+  "stop_the_line_policy": {
+    "rules": [
+      {
+        "signal_id": "error_rate",
+        "comparator": "gte",
+        "threshold": 0.05,
+        "evaluation_window_minutes": 15
+      },
+      {
+        "signal_id": "lease_violation_rate",
+        "comparator": "gte",
+        "threshold": 0.01,
+        "evaluation_window_minutes": 15
+      },
+      {
+        "signal_id": "duplicate_side_effect_rate",
+        "comparator": "gte",
+        "threshold": 0.005,
+        "evaluation_window_minutes": 15
+      },
+      {
+        "signal_id": "policy_enforcement_failure_rate",
+        "comparator": "gte",
+        "threshold": 0.001,
+        "evaluation_window_minutes": 15
+      }
+    ]
+  },
+  "release_promotion_policy": {
+    "preconditions": [
+      {
+        "precondition_id": "operational_readiness_gate_passed",
+        "description": "Operational-readiness validation gate passes with required evidence artifacts."
+      },
+      {
+        "precondition_id": "runbook_set_current",
+        "description": "Required runbooks are present and current for deployment, rollback, and incident handling."
+      },
+      {
+        "precondition_id": "alert_routing_matrix_valid",
+        "description": "Alert-routing matrix contains valid severity routing and runbook linkage."
+      },
+      {
+        "precondition_id": "service_level_policy_current",
+        "description": "Service-level and error-budget policy is current and release-freeze policy state is valid."
+      },
+      {
+        "precondition_id": "stop_the_line_clear",
+        "description": "No active stop-the-line threshold breach remains uncontained at promotion decision time."
+      },
+      {
+        "precondition_id": "rollout_stage_gate_passed",
+        "description": "Target rollout stage-gate evaluation passes for required health signals."
+      }
+    ]
+  }
 }

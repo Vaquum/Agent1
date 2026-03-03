@@ -8,3 +8,6 @@ Operational runbooks for deployment, rollback, migration, and incident response.
 - `review-thread-routing-failures.md`: response to review-thread routing failures.
 - `github-rate-limit-and-token-failures.md`: response to token and API quota failures.
 - `git-mutation-policy-denials.md`: response to codex-runtime git command policy denials.
+- `stop-the-line-alerts.md`: response to stop-the-line threshold breaches and acknowledgement flow.
+- `release-promotion-gate.md`: release-promotion gate execution and failure handling procedure.
+- `pr-smoke-failures-and-reruns.md`: PR smoke failure policy and rerun procedure.

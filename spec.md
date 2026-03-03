@@ -417,6 +417,7 @@ Secrets must be redacted before persistence.
 - Backend unit/integration: `pytest`.
 - Frontend unit: `Vitest`.
 - Browser and E2E: `Playwright`.
+- Playwright baseline includes dashboard shell, overview-filter, and timeline drill-down operator flows.
 - Live GitHub scenarios: sandbox workflows in `Vaquum/Agent1`.
 
 ### 13.2 Required Scenario Coverage
@@ -453,10 +454,15 @@ Secrets must be redacted before persistence.
 - Ruff and lint checks.
 - Unit/integration tests.
 - PR E2E smoke suite.
+- PR smoke scenario/spec selection and environment contract are defined in `tests/scenarios/pr-smoke-catalog.json` and `tests/scenarios/pr-smoke-env-contract.md`.
+- PR gate smoke execution is wired through `tests/scenarios/pr_smoke_run.py` with smoke artifact upload.
+- PR smoke fail policy and rerun procedure are documented in `docs/Developer/runbooks/pr-smoke-failures-and-reruns.md`.
 
 ### 14.2 Nightly Gates
 
 - Full E2E scenario suite on `main`.
+- Nightly browser scenarios run with retained Playwright artifacts and failure-summary output.
+- Nightly gate jobs enforce timeout, schedule, and concurrency guardrails.
 
 ### 14.3 Environment Safety Gates
 
@@ -495,7 +501,16 @@ No merge is complete without green required gates.
 ### 15.1 Progressive Rollout and Rollback Policy
 
 - Rollout is progressive and checkpointed by health signals.
+- Rollout stages and required health signals are defined in runtime controls (`controls/runtime/default.json`) as machine-readable `rollout_policy`.
+- Runtime stage-gate evaluation consumes `rollout_policy` to determine pass/fail progression for each rollout stage.
+- Failed stage-gate evaluation triggers deterministic rollback decisioning, including active-mode downgrade (`active` -> `shadow`).
 - Stop-the-line triggers include severe error-rate increases, lease-violation spikes, duplicate side effects, and policy enforcement failures.
+- Severe stop-the-line thresholds are defined in runtime controls as machine-readable `stop_the_line_policy` rules.
+- Stop-the-line threshold breach evaluation triggers deterministic automatic mode downgrade (`active` -> `shadow`) or no-op when already non-active.
+- Stop-the-line threshold breaches emit dedicated operational alerts and require explicit operator acknowledgement linked to alert identifier.
+- Release promotion preconditions are defined in runtime controls as machine-readable `release_promotion_policy` linked to readiness evidence and policy state.
+- Release workflow path executes release-promotion precondition gate before promotion.
+- Operator release-promotion procedure is documented in `docs/Developer/runbooks/release-promotion-gate.md`.
 - Rollback path includes:
   - immediate containment by mode downgrade (`active` -> `shadow`),
   - artifact rollback to last known good version,

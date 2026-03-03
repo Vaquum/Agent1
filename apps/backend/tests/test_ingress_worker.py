@@ -12,6 +12,8 @@ from agent1.core.contracts import JobState
 from agent1.core.contracts import RuntimeMode
 from agent1.core.services.watcher_lifecycle_service import WatcherSweepResult
 from agent1.core.services.ingress_worker import IngressWorker
+from agent1.core.services.stop_the_line_service import StopTheLineBreach
+from agent1.core.services.stop_the_line_service import StopTheLineDecision
 
 
 def _create_job_record(job_id: str) -> JobRecord:
@@ -72,6 +74,8 @@ class _AlertSignalService:
     def __init__(self) -> None:
         self.backlog_checks = 0
         self.failed_transition_checks = 0
+        self.stop_the_line_signal_collection_calls = 0
+        self.stop_the_line_alert_calls = 0
 
     def maybe_emit_outbox_backlog_growth(self, environment: EnvironmentName, trace_id: str) -> bool:
         assert environment == EnvironmentName.DEV
@@ -88,6 +92,67 @@ class _AlertSignalService:
         assert trace_id != ''
         self.failed_transition_checks += 1
         return False
+
+    def collect_stop_the_line_signal_values(
+        self,
+        environment: EnvironmentName,
+        window_seconds: int,
+    ) -> dict[str, float]:
+        assert environment == EnvironmentName.DEV
+        assert window_seconds == 900
+        self.stop_the_line_signal_collection_calls += 1
+        return {
+            'error_rate': 0.10,
+            'lease_violation_rate': 0.0,
+            'duplicate_side_effect_rate': 0.0,
+            'policy_enforcement_failure_rate': 0.0,
+        }
+
+    def maybe_emit_stop_the_line_threshold_breach(
+        self,
+        environment: EnvironmentName,
+        trace_id: str,
+        decision: StopTheLineDecision,
+        signal_values: dict[str, float],
+    ) -> str | None:
+        assert environment == EnvironmentName.DEV
+        assert trace_id != ''
+        assert decision.triggered is True
+        assert signal_values['error_rate'] == 0.10
+        self.stop_the_line_alert_calls += 1
+        return 'stop_line:trc:123'
+
+
+class _StopTheLineService:
+    def __init__(self) -> None:
+        self.evaluate_calls = 0
+
+    def get_evaluation_window_seconds(self) -> int:
+        return 900
+
+    def evaluate(
+        self,
+        signal_values: dict[str, float],
+        current_mode: RuntimeMode,
+    ) -> StopTheLineDecision:
+        self.evaluate_calls += 1
+        assert current_mode == RuntimeMode.ACTIVE
+        assert signal_values['error_rate'] == 0.10
+        return StopTheLineDecision(
+            triggered=True,
+            rollback_triggered=True,
+            current_mode=RuntimeMode.ACTIVE,
+            target_mode=RuntimeMode.SHADOW,
+            reason='stop_the_line_triggered_mode_downgrade',
+            breached_rules=[
+                StopTheLineBreach(
+                    signal_id='error_rate',
+                    comparator='gte',
+                    threshold=0.05,
+                    observed_value=0.10,
+                )
+            ],
+        )
 
 
 def test_ingress_worker_process_cycle_returns_jobs() -> None:
@@ -130,3 +195,23 @@ def test_ingress_worker_cycle_runs_watcher_and_alert_services() -> None:
     assert watcher_lifecycle_service.track_calls == 1
     assert alert_signal_service.backlog_checks == 1
     assert alert_signal_service.failed_transition_checks == 1
+
+
+def test_ingress_worker_cycle_evaluates_and_emits_stop_the_line_alerts() -> None:
+    alert_signal_service = _AlertSignalService()
+    stop_the_line_service = _StopTheLineService()
+    worker = IngressWorker(
+        ingress_processor=_StaticProcessor(),
+        poll_interval_seconds=1,
+        environment=EnvironmentName.DEV,
+        runtime_mode=RuntimeMode.ACTIVE,
+        alert_signal_service=cast(Any, alert_signal_service),
+        stop_the_line_service=cast(Any, stop_the_line_service),
+    )
+
+    processed_jobs = worker.process_cycle()
+
+    assert len(processed_jobs) == 1
+    assert stop_the_line_service.evaluate_calls == 1
+    assert alert_signal_service.stop_the_line_signal_collection_calls == 1
+    assert alert_signal_service.stop_the_line_alert_calls == 1

@@ -11,12 +11,16 @@ from agent1.core.contracts import EventSource
 from agent1.core.contracts import EventStatus
 from agent1.core.contracts import EventType
 from agent1.core.services.persistence_service import PersistenceService
+from agent1.core.services.stop_the_line_service import StopTheLineDecision
 
 LEASE_VIOLATIONS_ALERT = 'lease_violations'
 DUPLICATE_SIDE_EFFECT_ANOMALIES_ALERT = 'duplicate_side_effect_anomalies'
 COMMENT_ROUTING_FAILURES_ALERT = 'comment_routing_failures'
 OUTBOX_BACKLOG_GROWTH_ALERT = 'outbox_backlog_growth'
 ELEVATED_FAILED_TRANSITION_RATES_ALERT = 'elevated_failed_transition_rates'
+STOP_THE_LINE_THRESHOLD_BREACH_ALERT = 'stop_the_line_threshold_breach'
+STOP_THE_LINE_SYSTEM_JOB_ID = 'system:stop_the_line'
+STOP_THE_LINE_SYSTEM_ENTITY_KEY = 'system:stop_the_line'
 SEV1 = 'sev1'
 SEV2 = 'sev2'
 OUTBOX_BACKLOG_ALERT_THRESHOLD = 50
@@ -28,6 +32,7 @@ ALERT_RUNBOOK_PATHS: dict[str, str] = {
     COMMENT_ROUTING_FAILURES_ALERT: 'docs/Developer/runbooks/review-thread-routing-failures.md',
     OUTBOX_BACKLOG_GROWTH_ALERT: 'docs/Developer/runbooks/lease-and-idempotency-incidents.md',
     ELEVATED_FAILED_TRANSITION_RATES_ALERT: 'docs/Developer/runbooks/github-rate-limit-and-token-failures.md',
+    STOP_THE_LINE_THRESHOLD_BREACH_ALERT: 'docs/Developer/runbooks/stop-the-line-alerts.md',
 }
 
 
@@ -43,6 +48,22 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _create_stop_the_line_alert_id(trace_id: str, timestamp: datetime) -> str:
+
+    '''
+    Create deterministic stop-the-line alert identifier from trace and emission timestamp.
+
+    Args:
+    trace_id (str): Correlation trace identifier.
+    timestamp (datetime): Alert emission timestamp.
+
+    Returns:
+    str: Deterministic stop-the-line alert identifier.
+    '''
+
+    return f'stop_line:{trace_id}:{int(timestamp.timestamp() * 1000)}'
+
+
 class AlertSignalService:
     def __init__(
         self,
@@ -55,6 +76,64 @@ class AlertSignalService:
         self._outbox_backlog_alert_threshold = outbox_backlog_alert_threshold
         self._failed_transition_alert_threshold = failed_transition_alert_threshold
         self._failed_transition_window_seconds = failed_transition_window_seconds
+
+    def collect_stop_the_line_signal_values(
+        self,
+        environment: EnvironmentName,
+        window_seconds: int,
+    ) -> dict[str, float]:
+
+        '''
+        Create stop-the-line signal values from recent persisted operational events.
+
+        Args:
+        environment (EnvironmentName): Runtime environment value.
+        window_seconds (int): Inclusive event window size in seconds.
+
+        Returns:
+        dict[str, float]: Computed stop-the-line signal values keyed by signal identifier.
+        '''
+
+        window_start = _utc_now() - timedelta(seconds=window_seconds)
+        recent_events = self._persistence_service.list_events_since(
+            environment=environment,
+            window_start=window_start,
+        )
+        transition_count = 0
+        failed_transition_count = 0
+        policy_api_call_count = 0
+        lease_violation_count = 0
+        duplicate_side_effect_count = 0
+        policy_enforcement_failure_count = 0
+
+        for event in recent_events:
+            if event.event_type == EventType.STATE_TRANSITION:
+                transition_count += 1
+                if event.status in {EventStatus.BLOCKED, EventStatus.ERROR}:
+                    failed_transition_count += 1
+
+            if event.source != EventSource.POLICY or event.event_type != EventType.API_CALL:
+                continue
+
+            policy_api_call_count += 1
+            reason = event.details.get('reason')
+            if isinstance(reason, str):
+                if reason == 'mutating_lease_validation_failed':
+                    lease_violation_count += 1
+                elif reason == 'outbox_reconciliation_detected_confirmed_duplicate':
+                    duplicate_side_effect_count += 1
+
+                if reason.startswith('policy_') or reason == 'codex_git_command_policy_blocked':
+                    policy_enforcement_failure_count += 1
+
+        transition_denominator = max(transition_count, 1)
+        policy_denominator = max(policy_api_call_count, 1)
+        return {
+            'error_rate': failed_transition_count / transition_denominator,
+            'lease_violation_rate': lease_violation_count / policy_denominator,
+            'duplicate_side_effect_rate': duplicate_side_effect_count / policy_denominator,
+            'policy_enforcement_failure_rate': policy_enforcement_failure_count / policy_denominator,
+        }
 
     def emit_alert_signal(
         self,
@@ -286,6 +365,101 @@ class AlertSignalService:
         )
         return True
 
+    def maybe_emit_stop_the_line_threshold_breach(
+        self,
+        environment: EnvironmentName,
+        trace_id: str,
+        decision: StopTheLineDecision,
+        signal_values: dict[str, float],
+    ) -> str | None:
+
+        '''
+        Create stop-the-line threshold-breach alert event when decision indicates trigger state.
+
+        Args:
+        environment (EnvironmentName): Runtime environment value.
+        trace_id (str): Correlation trace identifier.
+        decision (StopTheLineDecision): Stop-the-line decision payload.
+        signal_values (dict[str, float]): Evaluated signal values used for decision.
+
+        Returns:
+        str | None: Emitted alert identifier when triggered, otherwise None.
+        '''
+
+        if decision.triggered is False:
+            return None
+
+        emitted_at = _utc_now()
+        alert_id = _create_stop_the_line_alert_id(trace_id=trace_id, timestamp=emitted_at)
+        self.emit_alert_signal(
+            environment=environment,
+            alert_name=STOP_THE_LINE_THRESHOLD_BREACH_ALERT,
+            severity=SEV1,
+            trace_id=trace_id,
+            job_id=STOP_THE_LINE_SYSTEM_JOB_ID,
+            entity_key=STOP_THE_LINE_SYSTEM_ENTITY_KEY,
+            reason=decision.reason,
+            details={
+                'action': 'stop_the_line_threshold_breach',
+                'alert_id': alert_id,
+                'current_mode': decision.current_mode.value,
+                'target_mode': decision.target_mode.value,
+                'rollback_triggered': decision.rollback_triggered,
+                'signal_values': signal_values,
+                'breached_rules': [rule.model_dump(mode='json') for rule in decision.breached_rules],
+            },
+        )
+        return alert_id
+
+    def acknowledge_stop_the_line_alert(
+        self,
+        environment: EnvironmentName,
+        trace_id: str,
+        alert_id: str,
+        operator_id: str,
+        acknowledgement_note: str,
+    ) -> datetime:
+
+        '''
+        Create operator acknowledgement event for one emitted stop-the-line alert identifier.
+
+        Args:
+        environment (EnvironmentName): Runtime environment value.
+        trace_id (str): Correlation trace identifier.
+        alert_id (str): Emitted stop-the-line alert identifier.
+        operator_id (str): Operator identity acknowledging the alert.
+        acknowledgement_note (str): Deterministic operator acknowledgement summary.
+
+        Returns:
+        datetime: Acknowledgement timestamp.
+        '''
+
+        acknowledged_at = _utc_now()
+        runbook = ALERT_RUNBOOK_PATHS[STOP_THE_LINE_THRESHOLD_BREACH_ALERT]
+        self._persistence_service.append_event(
+            AgentEvent(
+                timestamp=acknowledged_at,
+                environment=environment,
+                trace_id=trace_id,
+                job_id=STOP_THE_LINE_SYSTEM_JOB_ID,
+                entity_key=STOP_THE_LINE_SYSTEM_ENTITY_KEY,
+                source=EventSource.POLICY,
+                event_type=EventType.API_CALL,
+                status=EventStatus.OK,
+                details={
+                    'action': 'acknowledge_stop_the_line_alert',
+                    'alert_name': STOP_THE_LINE_THRESHOLD_BREACH_ALERT,
+                    'alert_id': alert_id,
+                    'operator_id': operator_id,
+                    'acknowledgement_note': acknowledgement_note,
+                    'runbook': runbook,
+                    'trace_id': trace_id,
+                    'job_id': STOP_THE_LINE_SYSTEM_JOB_ID,
+                },
+            ),
+        )
+        return acknowledged_at
+
 
 __all__ = [
     'ALERT_RUNBOOK_PATHS',
@@ -295,4 +469,5 @@ __all__ = [
     'ELEVATED_FAILED_TRANSITION_RATES_ALERT',
     'LEASE_VIOLATIONS_ALERT',
     'OUTBOX_BACKLOG_GROWTH_ALERT',
+    'STOP_THE_LINE_THRESHOLD_BREACH_ALERT',
 ]

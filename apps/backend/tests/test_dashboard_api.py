@@ -11,6 +11,8 @@ import pytest
 
 from agent1.api.dashboard import get_dashboard_job_timeline
 from agent1.api.dashboard import get_dashboard_overview
+from agent1.api.dashboard import acknowledge_stop_the_line_alert
+from agent1.api.dashboard import get_alert_signal_service
 from agent1.api.dashboard import get_dashboard_service
 from agent1.api.dashboard import router
 from agent1.api.dashboard_contracts import DashboardActionAttemptSummary
@@ -21,6 +23,7 @@ from agent1.api.dashboard_contracts import DashboardOverviewFilters
 from agent1.api.dashboard_contracts import DashboardOverviewResponse
 from agent1.api.dashboard_contracts import DashboardPageSummary
 from agent1.api.dashboard_contracts import DashboardTransitionSummary
+from agent1.api.dashboard_contracts import StopTheLineAcknowledgeRequest
 from agent1.core.contracts import EnvironmentName
 from agent1.core.contracts import EventSource
 from agent1.core.contracts import EventStatus
@@ -168,6 +171,30 @@ class _FakeDashboardService:
         )
 
 
+class _FakeAlertSignalService:
+    def __init__(self) -> None:
+        self.received_environment: EnvironmentName | None = None
+        self.received_trace_id: str | None = None
+        self.received_alert_id: str | None = None
+        self.received_operator_id: str | None = None
+        self.received_acknowledgement_note: str | None = None
+
+    def acknowledge_stop_the_line_alert(
+        self,
+        environment: EnvironmentName,
+        trace_id: str,
+        alert_id: str,
+        operator_id: str,
+        acknowledgement_note: str,
+    ) -> datetime:
+        self.received_environment = environment
+        self.received_trace_id = trace_id
+        self.received_alert_id = alert_id
+        self.received_operator_id = operator_id
+        self.received_acknowledgement_note = acknowledgement_note
+        return datetime.now(timezone.utc)
+
+
 def test_dashboard_router_exposes_overview_path() -> None:
     application = FastAPI()
     application.include_router(router)
@@ -179,6 +206,7 @@ def test_dashboard_router_exposes_overview_path() -> None:
 
     assert '/dashboard/overview' in route_paths
     assert '/dashboard/jobs/{job_id}/timeline' in route_paths
+    assert '/dashboard/alerts/stop-the-line/acknowledge' in route_paths
 
 
 def test_get_dashboard_overview_uses_dashboard_service() -> None:
@@ -243,3 +271,34 @@ def test_get_dashboard_service_returns_runtime_service() -> None:
     service = get_dashboard_service()
 
     assert service.__class__.__name__ == 'DashboardService'
+
+
+def test_acknowledge_stop_the_line_alert_uses_alert_signal_service() -> None:
+    fake_alert_service = _FakeAlertSignalService()
+
+    response = acknowledge_stop_the_line_alert(
+        request=StopTheLineAcknowledgeRequest(
+            trace_id='trc_stop_line_ack_1',
+            alert_id='stop_line:trc_stop_line_ack_1:123',
+            operator_id='agent1-oncall-primary',
+            acknowledgement_note='Incident commander assigned and containment started.',
+        ),
+        alert_signal_service=cast(Any, fake_alert_service),
+    )
+
+    assert fake_alert_service.received_environment == EnvironmentName.DEV
+    assert fake_alert_service.received_trace_id == 'trc_stop_line_ack_1'
+    assert fake_alert_service.received_alert_id == 'stop_line:trc_stop_line_ack_1:123'
+    assert fake_alert_service.received_operator_id == 'agent1-oncall-primary'
+    assert (
+        fake_alert_service.received_acknowledgement_note
+        == 'Incident commander assigned and containment started.'
+    )
+    assert response.alert_id == 'stop_line:trc_stop_line_ack_1:123'
+    assert response.operator_id == 'agent1-oncall-primary'
+
+
+def test_get_alert_signal_service_returns_runtime_service() -> None:
+    service = get_alert_signal_service()
+
+    assert service.__class__.__name__ == 'AlertSignalService'

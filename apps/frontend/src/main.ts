@@ -330,7 +330,12 @@ function createTimelineSectionMarkup(state: DashboardRenderState): string {
       return (
       `<tr>
         <td${selectedClassName}>
-          <button type='button' class='button-secondary inspect-event' data-event-key='${escapeHtml(eventKey)}'>
+          <button
+            type='button'
+            class='button-secondary inspect-event'
+            data-testid='inspect-timeline-event'
+            data-event-key='${escapeHtml(eventKey)}'
+          >
             ${isSelected ? 'Selected' : 'Inspect'}
           </button>
         </td>
@@ -375,7 +380,14 @@ function createTimelineSectionMarkup(state: DashboardRenderState): string {
         <p class='status'>
           Trace ${escapeHtml(selectedEvent.trace_id)} at ${escapeHtml(formatDateTime(selectedEvent.timestamp))}
         </p>
-        <button type='button' id='apply-trace-filter' class='button-secondary'>Filter Overview by Trace</button>
+        <button
+          type='button'
+          id='apply-trace-filter'
+          class='button-secondary'
+          data-testid='apply-trace-filter'
+        >
+          Filter Overview by Trace
+        </button>
         <pre class='event-details-json'>${escapeHtml(formatEventDetails(selectedEvent.details))}</pre>
         <h3>Correlated Transitions</h3>
         <table>
@@ -418,8 +430,17 @@ export function createDashboardMarkup(state: DashboardRenderState): string {
   const jobsRows = createRows(
     jobs.map((job) => (
       `<tr>
-        <td><button type='button' class='button-secondary select-job' data-job-id='${escapeHtml(job.job_id)}'>Timeline</button></td>
-        <td>${escapeHtml(job.job_id)}</td>
+        <td>
+          <button
+            type='button'
+            class='button-secondary select-job'
+            data-testid='select-job-timeline'
+            data-job-id='${escapeHtml(job.job_id)}'
+          >
+            Timeline
+          </button>
+        </td>
+        <td data-testid='job-id-cell'>${escapeHtml(job.job_id)}</td>
         <td>${escapeHtml(job.entity_key)}</td>
         <td>${escapeHtml(job.kind)}</td>
         <td>${escapeHtml(job.state)}</td>
@@ -449,7 +470,7 @@ export function createDashboardMarkup(state: DashboardRenderState): string {
     events.map((event) => (
       `<tr>
         <td>${escapeHtml(formatDateTime(event.timestamp))}</td>
-        <td>${escapeHtml(event.trace_id)}</td>
+        <td data-testid='overview-trace-cell'>${escapeHtml(event.trace_id)}</td>
         <td>${escapeHtml(event.job_id)}</td>
         <td>${escapeHtml(event.entity_key)}</td>
         <td>${escapeHtml(event.source)}</td>

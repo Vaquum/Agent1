@@ -15,6 +15,7 @@ concurrency:
 jobs:
   backend-full-suite:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: apps/backend
@@ -40,6 +41,7 @@ jobs:
 
   frontend-full-suite:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -64,8 +66,56 @@ jobs:
           pnpm --filter @agent1/frontend test
           pnpm --filter @agent1/frontend build
 
+  frontend-playwright:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.6.1
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browser
+        run: pnpm --filter @agent1/frontend exec playwright install --with-deps chromium
+
+      - name: Playwright smoke
+        env:
+          PLAYWRIGHT_JUNIT_OUTPUT_NAME: nightly-playwright-junit.xml
+          PLAYWRIGHT_JUNIT_OUTPUT_DIR: test-results
+        run: pnpm --filter @agent1/frontend exec playwright test --project=chromium --reporter=line,junit,html
+
+      - name: Upload Playwright artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-frontend-playwright
+          path: |
+            apps/frontend/playwright-report
+            apps/frontend/test-results
+          retention-days: 14
+
+      - name: Nightly Playwright failure summary
+        if: failure()
+        run: |
+          echo "## Nightly Playwright Failure" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Job: frontend-playwright" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Artifacts: nightly-frontend-playwright" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Action: inspect uploaded playwright-report and test-results artifacts." >> "$GITHUB_STEP_SUMMARY"
+
   scenario-full-suite:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -85,6 +135,7 @@ jobs:
 
   operational-readiness:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -99,6 +150,7 @@ jobs:
 
   live-sandbox-smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4

@@ -5,6 +5,8 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from agent1.core.contracts import AgentEvent
+from agent1.core.contracts import EnvironmentName
+from agent1.core.contracts import EventSource
 from agent1.core.contracts import EventStatus
 from agent1.core.contracts import EventType
 from agent1.db.models import EventJournalModel
@@ -140,6 +142,35 @@ class EventRepository:
             )
             .count()
         )
+
+    def list_events_since(
+        self,
+        environment: EnvironmentName,
+        window_start: datetime,
+        source: EventSource | None = None,
+    ) -> list[EventJournalModel]:
+
+        '''
+        Create environment-scoped event journal rows since one inclusive timestamp.
+
+        Args:
+        environment (EnvironmentName): Runtime environment value.
+        window_start (datetime): Inclusive lower bound for event timestamps.
+        source (EventSource | None): Optional event source filter.
+
+        Returns:
+        list[EventJournalModel]: Ordered event journal rows since timestamp.
+        '''
+
+        query = (
+            self._session.query(EventJournalModel)
+            .filter(EventJournalModel.environment == environment)
+            .filter(EventJournalModel.timestamp >= window_start)
+        )
+        if source is not None:
+            query = query.filter(EventJournalModel.source == source)
+
+        return query.order_by(EventJournalModel.timestamp.asc()).all()
 
 
 __all__ = ['EventRepository']

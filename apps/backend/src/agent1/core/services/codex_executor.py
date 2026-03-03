@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import fnmatch
+import shlex
+
 from agent1.adapters.codex.client import CodexCliAdapter
 from agent1.adapters.codex.client import SubprocessCodexCliAdapter
 from agent1.adapters.codex.contracts import CodexTaskInput
 from agent1.adapters.codex.contracts import StreamEventHandler
 from agent1.config.settings import Settings
 from agent1.config.settings import get_settings
+from agent1.core.contracts import EnvironmentName
 from agent1.core.contracts import ExecutionResult
 from agent1.core.contracts import ExecutionStatus
 from agent1.core.control_loader import validate_control_bundle
@@ -102,17 +106,105 @@ def _matches_command_prefix(command: str, prefixes: list[str]) -> bool:
     return False
 
 
+def _tokenize_command(command: str) -> list[str]:
+    try:
+        return shlex.split(command)
+    except ValueError:
+        return command.split()
+
+
+def _normalize_branch_name(branch_name: str) -> str:
+    normalized_branch_name = branch_name.strip()
+    if normalized_branch_name.startswith('refs/heads/'):
+        return normalized_branch_name.removeprefix('refs/heads/')
+
+    return normalized_branch_name
+
+
+def _extract_checkout_or_switch_created_branch(tokens: list[str]) -> str | None:
+    for token_index, token in enumerate(tokens):
+        if token in {'-b', '-B', '-c', '-C'} and token_index + 1 < len(tokens):
+            return _normalize_branch_name(tokens[token_index + 1])
+
+    return None
+
+
+def _extract_push_branch(tokens: list[str]) -> str | None:
+    if len(tokens) < 3:
+        return None
+
+    candidate_tokens: list[str] = []
+    for token in tokens[2:]:
+        if token.startswith('-'):
+            continue
+        if token in {'origin', 'upstream'}:
+            continue
+        candidate_tokens.append(token)
+
+    if len(candidate_tokens) == 0:
+        return None
+
+    first_candidate = candidate_tokens[0]
+    if ':' in first_candidate:
+        destination_ref = first_candidate.split(':')[-1]
+        if destination_ref == '':
+            return None
+        return _normalize_branch_name(destination_ref)
+
+    if first_candidate in {'HEAD', '@'}:
+        return None
+
+    return _normalize_branch_name(first_candidate)
+
+
+def _extract_branch_target_for_policy(command: str) -> str | None:
+    tokens = _tokenize_command(command)
+    if len(tokens) < 2:
+        return None
+    if tokens[0] != 'git':
+        return None
+
+    command_verb = tokens[1]
+    if command_verb in {'checkout', 'switch'}:
+        return _extract_checkout_or_switch_created_branch(tokens)
+    if command_verb == 'push':
+        return _extract_push_branch(tokens)
+
+    return None
+
+
 class CodexExecutor:
     def __init__(
         self,
         codex_adapter: CodexCliAdapter | None = None,
         settings: Settings | None = None,
         policies: PoliciesControl | None = None,
+        runtime_environment: EnvironmentName = EnvironmentName.DEV,
     ) -> None:
         runtime_settings = settings or get_settings()
         self._default_timeout_seconds = runtime_settings.codex_cli_timeout_seconds
         self._codex_adapter = codex_adapter or SubprocessCodexCliAdapter(settings=runtime_settings)
         self._policies = policies or validate_control_bundle().policies
+        self._runtime_environment = runtime_environment
+
+    def _list_allowed_branch_patterns(self) -> list[str]:
+        patterns_by_environment = self._policies.branch_mutation_patterns_by_environment
+        if self._runtime_environment == EnvironmentName.PROD:
+            return patterns_by_environment.prod
+        if self._runtime_environment == EnvironmentName.CI:
+            return patterns_by_environment.ci
+
+        return patterns_by_environment.dev
+
+    def _is_branch_allowed(self, branch_name: str) -> bool:
+        for pattern in self._list_allowed_branch_patterns():
+            normalized_pattern = pattern.strip()
+            if normalized_pattern == '':
+                continue
+            if fnmatch.fnmatchcase(branch_name, normalized_pattern):
+                return True
+
+        return False
 
     def _resolve_blocked_git_command(self, arguments: list[str], prompt: str) -> str | None:
 
@@ -136,6 +228,10 @@ class CodexExecutor:
                 if len(self._policies.allowed_git_mutation_commands) == 0:
                     return command
                 if _matches_command_prefix(command, self._policies.allowed_git_mutation_commands) is False:
+                    return command
+
+                branch_target = _extract_branch_target_for_policy(command)
+                if branch_target is not None and self._is_branch_allowed(branch_target) is False:
                     return command
 
         return None
@@ -175,7 +271,7 @@ class CodexExecutor:
         if blocked_git_command is not None:
             return ExecutionResult(
                 status=ExecutionStatus.BLOCKED,
-                summary='Codex task blocked by git mutation command policy allowlist.',
+                summary='Codex task blocked by git mutation or branch namespace policy.',
                 command=blocked_git_command,
                 exit_code=None,
                 metadata={'blocked_git_command': blocked_git_command},
