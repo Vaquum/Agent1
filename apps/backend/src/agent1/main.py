@@ -12,6 +12,7 @@ from agent1.api.dashboard import router as dashboard_router
 from agent1.api.health import router as health_router
 from agent1.config.settings import get_settings
 from agent1.core.contracts import EnvironmentName
+from agent1.core.contracts import RuntimeMode
 from agent1.core.control_loader import validate_control_bundle
 from agent1.core.ingress_coordinator import create_runtime_ingress_coordinator
 from agent1.core.ingress_normalizer import GitHubIngressNormalizer
@@ -91,6 +92,59 @@ def _create_lifespan(
     return _lifespan
 
 
+def _resolve_runtime_environment(runtime_environment_value: str) -> EnvironmentName:
+
+    '''
+    Create runtime environment enum from settings configuration value.
+
+    Args:
+    runtime_environment_value (str): Runtime environment configuration string.
+
+    Returns:
+    EnvironmentName: Parsed runtime environment value.
+    '''
+
+    normalized_runtime_environment_value = runtime_environment_value.strip().lower()
+    try:
+        return EnvironmentName(normalized_runtime_environment_value)
+    except ValueError as error:
+        message = (
+            'Unsupported runtime environment setting value: '
+            f'{runtime_environment_value}'
+        )
+        raise ValueError(message) from error
+
+
+def _resolve_runtime_mode(
+    control_mode: RuntimeMode,
+    runtime_mode_override_value: str,
+) -> RuntimeMode:
+
+    '''
+    Create runtime mode from control default and optional settings override.
+
+    Args:
+    control_mode (RuntimeMode): Runtime mode defined by active control bundle.
+    runtime_mode_override_value (str): Runtime mode override from settings.
+
+    Returns:
+    RuntimeMode: Effective runtime mode.
+    '''
+
+    normalized_runtime_mode_override_value = runtime_mode_override_value.strip().lower()
+    if normalized_runtime_mode_override_value == '':
+        return control_mode
+
+    try:
+        return RuntimeMode(normalized_runtime_mode_override_value)
+    except ValueError as error:
+        message = (
+            'Unsupported runtime mode override setting value: '
+            f'{runtime_mode_override_value}'
+        )
+        raise ValueError(message) from error
+
+
 def create_application() -> FastAPI:
 
     '''
@@ -102,6 +156,11 @@ def create_application() -> FastAPI:
 
     control_bundle = validate_control_bundle()
     settings = get_settings()
+    runtime_environment = _resolve_runtime_environment(settings.runtime_environment)
+    runtime_mode = _resolve_runtime_mode(
+        control_mode=control_bundle.runtime.mode,
+        runtime_mode_override_value=settings.runtime_mode_override,
+    )
     sentry_enabled = initialize_sentry()
     codex_executor = CodexExecutor(policies=control_bundle.policies)
     rollout_stage_gate_evaluator = RolloutStageGateEvaluator(
@@ -121,7 +180,8 @@ def create_application() -> FastAPI:
     reviewer_follow_up_template = control_bundle.prompts.templates['reviewer_follow_up'].task_prompt
     author_follow_up_template = control_bundle.prompts.templates['pr_follow_up'].task_prompt
     ingress_normalizer = GitHubIngressNormalizer(
-        runtime_mode=control_bundle.runtime.mode,
+        environment=runtime_environment,
+        runtime_mode=runtime_mode,
         active_repositories=control_bundle.runtime.active_repositories,
         require_sandbox_scope_for_dev_active=(
             control_bundle.runtime.require_sandbox_scope_for_dev_active
@@ -141,12 +201,13 @@ def create_application() -> FastAPI:
         allow_top_level_pr_fallback=control_bundle.commenting.allow_top_level_pr_fallback,
         idempotency_policy_version=control_bundle.policies.version,
         codex_executor=codex_executor,
-        runtime_mode=control_bundle.runtime.mode,
+        runtime_mode=runtime_mode,
+        environment=runtime_environment,
         normalizer=ingress_normalizer,
     )
     alert_signal_service = AlertSignalService()
     watcher_lifecycle_service = WatcherLifecycleService(
-        environment=EnvironmentName.DEV,
+        environment=runtime_environment,
         watch_interval_seconds=control_bundle.runtime.watch_interval_seconds,
         stale_after_seconds=max(control_bundle.runtime.watch_interval_seconds * 2, 30),
         max_reclaim_attempts=max(control_bundle.runtime.max_retry_attempts, 1),
@@ -155,15 +216,15 @@ def create_application() -> FastAPI:
     ingress_worker = IngressWorker(
         ingress_processor=ingress_coordinator,
         poll_interval_seconds=control_bundle.runtime.poll_interval_seconds,
-        environment=EnvironmentName.DEV,
-        runtime_mode=control_bundle.runtime.mode,
+        environment=runtime_environment,
+        runtime_mode=runtime_mode,
         watcher_lifecycle_service=watcher_lifecycle_service,
         alert_signal_service=alert_signal_service,
         stop_the_line_service=stop_the_line_service,
     )
     runtime_scope_guard = RuntimeScopeGuard(
-        environment=EnvironmentName.DEV,
-        mode=control_bundle.runtime.mode,
+        environment=runtime_environment,
+        mode=runtime_mode,
         instance_id=settings.runtime_instance_id,
         active_repositories=control_bundle.runtime.active_repositories,
         require_sandbox_scope_for_dev_active=(
@@ -189,6 +250,8 @@ def create_application() -> FastAPI:
     application.state.ingress_coordinator = ingress_coordinator
     application.state.ingress_worker = ingress_worker
     application.state.runtime_scope_guard = runtime_scope_guard
+    application.state.runtime_environment = runtime_environment
+    application.state.runtime_mode = runtime_mode
     application.state.codex_executor = codex_executor
     application.state.rollout_stage_gate_evaluator = rollout_stage_gate_evaluator
     application.state.rollout_guard_service = rollout_guard_service

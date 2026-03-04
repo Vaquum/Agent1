@@ -14,6 +14,9 @@ RUN pnpm install --frozen-lockfile --filter @agent1/frontend...
 
 COPY apps/frontend /app/apps/frontend
 
+ARG VITE_AGENT1_API_BASE_URL='http://localhost:8000'
+ENV VITE_AGENT1_API_BASE_URL="$VITE_AGENT1_API_BASE_URL"
+
 RUN pnpm --filter @agent1/frontend build
 
 FROM nginx:1.27-alpine

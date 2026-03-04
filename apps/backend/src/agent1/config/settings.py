@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     codex_cli_command: str = 'codex'
     codex_cli_timeout_seconds: int = 900
     runtime_instance_id: str = Field(default_factory=_default_runtime_instance_id)
+    runtime_environment: str = 'dev'
+    runtime_mode_override: str = ''
     sentry_python_dsn: str = ''
     sentry_environment: str = 'dev'
     sentry_release: str = ''

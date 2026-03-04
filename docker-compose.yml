@@ -1,0 +1,63 @@
+name: agent1
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    environment:
+      AGENT1_DOCKER_MODE: ${AGENT1_DOCKER_MODE:-dev}
+      PORT: ${PORT:-8000}
+      DATABASE_URL: ${DATABASE_URL:-}
+      GITHUB_API_URL: ${GITHUB_API_URL:-https://api.github.com}
+      GITHUB_USER: ${GITHUB_USER:-zero-bang}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_READ_TOKEN: ${GITHUB_READ_TOKEN:-}
+      GITHUB_WRITE_TOKEN: ${GITHUB_WRITE_TOKEN:-}
+      GITHUB_HTTP_TIMEOUT_SECONDS: ${GITHUB_HTTP_TIMEOUT_SECONDS:-30}
+      CODEX_CLI_COMMAND: ${CODEX_CLI_COMMAND:-codex}
+      CODEX_CLI_TIMEOUT_SECONDS: ${CODEX_CLI_TIMEOUT_SECONDS:-900}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      RUNTIME_INSTANCE_ID: ${RUNTIME_INSTANCE_ID:-}
+      RUNTIME_ENVIRONMENT: ${RUNTIME_ENVIRONMENT:-}
+      RUNTIME_MODE_OVERRIDE: ${RUNTIME_MODE_OVERRIDE:-}
+      SENTRY_PYTHON_DSN: ${SENTRY_PYTHON_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-dev}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+      SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.0}
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-agent1-backend}
+      OTEL_TRACES_SAMPLER: ${OTEL_TRACES_SAMPLER:-always_on}
+      OTEL_PROPAGATORS: ${OTEL_PROPAGATORS:-tracecontext,baggage}
+    ports:
+      - '8000:8000'
+    volumes:
+      - agent1_data:/data
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          'import urllib.request; urllib.request.urlopen("http://localhost:8000/health", timeout=5)',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+      args:
+        VITE_AGENT1_API_BASE_URL: /api
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - '8080:80'
+    volumes:
+      - ./apps/frontend/nginx.local.conf:/etc/nginx/conf.d/default.conf:ro
+
+volumes:
+  agent1_data:
