@@ -49,9 +49,9 @@ AGENT1_DOCKER_MODE=active docker compose up --build
 
 - Runtime behavior: `prod` environment + `active` mode.
 - Uses runtime credentials and database settings from `.env`.
-- Main runtime envs to set for real operation: `GITHUB_USER`, `GITHUB_READ_TOKEN`, `GITHUB_WRITE_TOKEN`, `OPENAI_API_KEY`, `DATABASE_URL`.
-- `GITHUB_READ_TOKEN` and `GITHUB_WRITE_TOKEN` must both be set and must be different values.
+- `GITHUB_TOKEN` must be set for Agent1 runtime.
 - Fork note: set `GITHUB_USER` to your bot account and align `controls/policies/default.json` (`agent_actor` and `mutating_credential_owner_by_environment`) to that same account.
+- Full variable-by-variable guidance: `docs/Developer/Environment-Variables.md`.
 
 Stop the stack:
 

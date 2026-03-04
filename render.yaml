@@ -11,14 +11,10 @@ services:
     envVars:
       - key: DATABASE_URL
         sync: false
-      - key: GITHUB_READ_TOKEN
-        sync: false
-      - key: GITHUB_WRITE_TOKEN
-        sync: false
       - key: GITHUB_TOKEN
         sync: false
       - key: GITHUB_USER
-        value: zero-bang
+        sync: false
       - key: GITHUB_API_URL
         value: https://api.github.com
       - key: SENTRY_PYTHON_DSN

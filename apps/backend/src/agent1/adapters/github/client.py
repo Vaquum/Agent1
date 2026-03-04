@@ -104,28 +104,11 @@ class UrlLibGitHubApiClient:
                 raise GitHubPolicyError(message) from error
 
     def _resolve_token(self, for_mutation: bool) -> str:
-        read_token = self._settings.github_read_token.strip()
-        write_token = self._settings.github_write_token.strip()
-        default_token = self._settings.github_token.strip()
-
-        if self._policies.enforce_read_write_credential_split:
-            if read_token == '' or write_token == '':
-                message = 'Read/write credential split is enforced but dedicated tokens are missing.'
-                raise GitHubPolicyError(message)
-
-            if read_token == write_token:
-                message = 'Read/write credential split is enforced but tokens are identical.'
-                raise GitHubPolicyError(message)
-
-        token = default_token
-        if for_mutation:
-            if write_token != '':
-                token = write_token
-        elif read_token != '':
-            token = read_token
+        _ = for_mutation
+        token = self._settings.github_token.strip()
 
         if token == '':
-            message = 'Missing GitHub token for API client.'
+            message = 'Missing GITHUB_TOKEN for API client.'
             raise GitHubPolicyError(message)
 
         return token
