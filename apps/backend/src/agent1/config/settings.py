@@ -24,10 +24,10 @@ class Settings(BaseSettings):
 
     database_url: str = 'sqlite+pysqlite:///./agent1.db'
     github_api_url: str = 'https://api.github.com'
-    github_user: str = 'zero-bang'
+    github_user: str = ''
     github_token: str = ''
     github_http_timeout_seconds: int = 30
-    codex_cli_command: str = 'codex'
+    codex_cli_command: str = 'codex exec --skip-git-repo-check'
     codex_cli_timeout_seconds: int = 900
     runtime_instance_id: str = Field(default_factory=_default_runtime_instance_id)
     runtime_environment: str = 'dev'

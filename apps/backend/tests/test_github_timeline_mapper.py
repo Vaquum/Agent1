@@ -17,7 +17,7 @@ def test_timeline_mapper_maps_review_and_comment_events() -> None:
             'id': 1002,
             'event': 'commented',
             'created_at': '2026-03-03T10:01:00Z',
-            'actor': {'login': 'zero-bang'},
+            'actor': {'login': 'runtime-agent-user'},
             'node_id': 'PRRC_kwDOABCD',
             'pull_request_review_id': 55,
             'path': 'apps/backend/src/agent1/main.py',

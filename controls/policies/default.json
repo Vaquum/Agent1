@@ -3,7 +3,7 @@
   "repo_scope": [
     "Vaquum/Agent1"
   ],
-  "agent_actor": "zero-bang",
+  "agent_actor": "__env_github_user__",
   "ignored_actors": [],
   "ignored_actor_suffixes": [
     "[bot]"
@@ -41,9 +41,9 @@
   "default_deny_github_capabilities": true,
   "fail_closed_policy_resolution": true,
   "mutating_credential_owner_by_environment": {
-    "dev": "zero-bang",
-    "prod": "zero-bang",
-    "ci": "zero-bang"
+    "dev": "__env_github_user__",
+    "prod": "__env_github_user__",
+    "ci": "__env_github_user__"
   },
   "github_capabilities": {
     "read_notifications": true,

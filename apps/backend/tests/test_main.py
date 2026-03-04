@@ -46,6 +46,7 @@ def test_create_application_sets_runtime_ingress_coordinator() -> None:
         if isinstance(path, str)
     }
     assert '/dashboard/overview' in route_paths
+    assert '/dashboard/controls/active-repositories' in route_paths
     assert '/dashboard/jobs/{job_id}/timeline' in route_paths
     assert '/dashboard/alerts/stop-the-line/acknowledge' in route_paths
 

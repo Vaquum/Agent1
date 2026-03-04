@@ -54,6 +54,54 @@ def test_pr_review_request_normalizes_to_reviewer_kind() -> None:
     assert normalized.initial_state == JobState.READY_TO_EXECUTE
 
 
+def test_pr_review_thread_update_reactivates_reviewer_job() -> None:
+    normalizer = GitHubIngressNormalizer(environment=EnvironmentName.DEV)
+    ingress_event = GitHubIngressEvent(
+        event_id='evt_pr_review_thread_update_1',
+        repository='Vaquum/Agent1',
+        entity_number=34,
+        entity_type=IngressEntityType.PR,
+        actor='mikkokotila',
+        event_type=IngressEventType.PR_REVIEW_COMMENT,
+        timestamp=datetime.now(timezone.utc),
+        details={
+            'job_kind_hint': JobKind.PR_REVIEWER.value,
+            'is_review_thread_comment': True,
+        },
+    )
+
+    normalized = normalizer.normalize_event(ingress_event)
+
+    assert normalized is not None
+    assert normalized.job_kind == JobKind.PR_REVIEWER
+    assert normalized.transition_to == JobState.READY_TO_EXECUTE
+    assert normalized.transition_reason == IngressEventType.PR_REVIEW_COMMENT.value
+
+
+def test_non_thread_reviewer_comment_update_is_ignored() -> None:
+    normalizer = GitHubIngressNormalizer(environment=EnvironmentName.DEV)
+    ingress_event = GitHubIngressEvent(
+        event_id='evt_pr_non_thread_comment_1',
+        repository='Vaquum/Agent1',
+        entity_number=35,
+        entity_type=IngressEntityType.PR,
+        actor='mikkokotila',
+        event_type=IngressEventType.PR_REVIEW_COMMENT,
+        timestamp=datetime.now(timezone.utc),
+        details={
+            'job_kind_hint': JobKind.PR_REVIEWER.value,
+            'is_review_thread_comment': False,
+        },
+    )
+
+    normalized = normalizer.normalize_event(ingress_event)
+
+    assert normalized is not None
+    assert normalized.job_kind == JobKind.PR_REVIEWER
+    assert normalized.transition_to is None
+    assert normalized.transition_reason is None
+
+
 def test_issue_updated_with_context_transitions_to_ready_to_execute() -> None:
     normalizer = GitHubIngressNormalizer(environment=EnvironmentName.DEV)
     ingress_event = GitHubIngressEvent(
@@ -101,14 +149,14 @@ def test_pr_updated_with_human_terminal_decision_transitions_to_completed() -> N
 def test_issue_mention_from_agent_actor_is_ignored() -> None:
     normalizer = GitHubIngressNormalizer(
         environment=EnvironmentName.DEV,
-        agent_actor='zero-bang',
+        agent_actor='runtime-agent-user',
     )
     ingress_event = GitHubIngressEvent(
         event_id='evt_issue_self_mention_1',
         repository='Vaquum/Agent1',
         entity_number=16,
         entity_type=IngressEntityType.ISSUE,
-        actor='zero-bang',
+        actor='runtime-agent-user',
         event_type=IngressEventType.ISSUE_MENTION,
         timestamp=datetime.now(timezone.utc),
         details={},
@@ -262,3 +310,28 @@ def test_normalizer_filters_prod_active_sandbox_scope() -> None:
     normalized = normalizer.normalize_event(ingress_event)
 
     assert normalized is None
+
+
+def test_normalizer_active_repositories_can_be_updated_runtime() -> None:
+    normalizer = GitHubIngressNormalizer(
+        environment=EnvironmentName.DEV,
+        runtime_mode=RuntimeMode.ACTIVE,
+        active_repositories=['Vaquum/Agent1'],
+    )
+    ingress_event = GitHubIngressEvent(
+        event_id='evt_runtime_scope_update_1',
+        repository='Vaquum/Confab',
+        entity_number=23,
+        entity_type=IngressEntityType.ISSUE,
+        actor='mikkokotila',
+        event_type=IngressEventType.ISSUE_MENTION,
+        timestamp=datetime.now(timezone.utc),
+        details={},
+    )
+
+    normalized_before_update = normalizer.normalize_event(ingress_event)
+    normalizer.set_active_repositories(['Vaquum/Agent1', 'Vaquum/Confab'])
+    normalized_after_update = normalizer.normalize_event(ingress_event)
+
+    assert normalized_before_update is None
+    assert normalized_after_update is not None

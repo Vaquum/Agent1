@@ -96,7 +96,7 @@ def _create_valid_controls(root: Path) -> None:
         {
             'version': '0.1.0',
             'repo_scope': ['Vaquum/Agent1'],
-            'agent_actor': 'zero-bang',
+            'agent_actor': 'runtime-agent-user',
             'ignored_actors': [],
             'ignored_actor_suffixes': ['[bot]'],
             'deny_git_commands': ['git push --force'],
@@ -110,9 +110,9 @@ def _create_valid_controls(root: Path) -> None:
             'default_deny_github_capabilities': True,
             'fail_closed_policy_resolution': True,
             'mutating_credential_owner_by_environment': {
-                'dev': 'zero-bang',
-                'prod': 'zero-bang',
-                'ci': 'zero-bang',
+                'dev': 'runtime-agent-user',
+                'prod': 'runtime-agent-user',
+                'ci': 'runtime-agent-user',
             },
             'github_capabilities': {
                 'read_notifications': True,
@@ -291,7 +291,7 @@ def test_load_control_bundle_parses_valid_controls(tmp_path: Path) -> None:
     assert bundle.runtime.active_repositories == ['Vaquum/Agent1']
     assert bundle.runtime.require_sandbox_scope_for_dev_active is True
     assert bundle.commenting.require_review_thread_reply is True
-    assert bundle.policies.agent_actor == 'zero-bang'
+    assert bundle.policies.agent_actor == 'runtime-agent-user'
     assert bundle.policies.ignored_actor_suffixes == ['[bot]']
     assert bundle.policies.allowed_git_mutation_commands == ['git add', 'git commit', 'git push']
     assert len(bundle.policies.permission_matrix.entries) == 15

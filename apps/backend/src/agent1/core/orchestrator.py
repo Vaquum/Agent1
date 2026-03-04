@@ -37,6 +37,37 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _resolve_transition_details(
+    to_state: JobState,
+    reason: str,
+    transition_details: dict[str, object] | None,
+) -> dict[str, object]:
+
+    '''
+    Create transition details payload with deterministic blocked-transition fallback.
+
+    Args:
+    to_state (JobState): Target lifecycle state.
+    reason (str): Transition reason payload.
+    transition_details (dict[str, object] | None): Optional explicit transition details.
+
+    Returns:
+    dict[str, object]: Transition details payload for event journal entries.
+    '''
+
+    event_transition_details = transition_details.copy() if transition_details is not None else {}
+    if to_state == JobState.BLOCKED and len(event_transition_details) == 0:
+        return {
+            'error_type': 'UnknownBlockedTransition',
+            'error_message': (
+                'Blocked transition without explicit error details. '
+                f'reason={reason}'
+            ),
+        }
+
+    return event_transition_details
+
+
 class JobOrchestrator:
     def __init__(self, persistence_service: PersistenceService | None = None) -> None:
         self._persistence_service = persistence_service or PersistenceService()
@@ -529,7 +560,14 @@ class JobOrchestrator:
         )
         return persisted_event
 
-    def transition_job(self, job_id: str, to_state: JobState, reason: str, trace_id: str) -> JobRecord:
+    def transition_job(
+        self,
+        job_id: str,
+        to_state: JobState,
+        reason: str,
+        trace_id: str,
+        transition_details: dict[str, object] | None = None,
+    ) -> JobRecord:
 
         '''
         Create deterministic job transition after workflow-policy validation.
@@ -549,9 +587,23 @@ class JobOrchestrator:
             message = f'Job not found for transition: {job_id}'
             raise ValueError(message)
 
+        event_transition_details = _resolve_transition_details(
+            to_state=to_state,
+            reason=reason,
+            transition_details=transition_details,
+        )
+
         try:
             require_transition(current_job.state, to_state)
         except ValueError:
+            event_details = {
+                'action': 'transition_job',
+                'from_state': current_job.state.value,
+                'to_state': to_state.value,
+                'reason': reason,
+            }
+            if len(event_transition_details) != 0:
+                event_details['transition_details'] = event_transition_details
             self._persistence_service.append_event(
                 AgentEvent(
                     timestamp=_utc_now(),
@@ -562,17 +614,20 @@ class JobOrchestrator:
                     source=EventSource.POLICY,
                     event_type=EventType.STATE_TRANSITION,
                     status=EventStatus.BLOCKED,
-                    details={
-                        'action': 'transition_job',
-                        'from_state': current_job.state.value,
-                        'to_state': to_state.value,
-                        'reason': reason,
-                    },
+                    details=event_details,
                 )
             )
             raise
 
         updated_job = self._persistence_service.transition_job_state(job_id, to_state, reason)
+        event_details = {
+            'action': 'transition_job',
+            'from_state': current_job.state.value,
+            'to_state': updated_job.state.value,
+            'reason': reason,
+        }
+        if len(event_transition_details) != 0:
+            event_details['transition_details'] = event_transition_details
         self._persistence_service.append_event(
             AgentEvent(
                 timestamp=_utc_now(),
@@ -583,12 +638,7 @@ class JobOrchestrator:
                 source=EventSource.AGENT,
                 event_type=EventType.STATE_TRANSITION,
                 status=EventStatus.OK,
-                details={
-                    'action': 'transition_job',
-                    'from_state': current_job.state.value,
-                    'to_state': updated_job.state.value,
-                    'reason': reason,
-                },
+                details=event_details,
             )
         )
         return updated_job
@@ -600,6 +650,7 @@ class JobOrchestrator:
         reason: str,
         trace_id: str,
         outbox_requests: list[OutboxWriteRequest],
+        transition_details: dict[str, object] | None = None,
     ) -> tuple[JobRecord, list[OutboxRecord]]:
 
         '''
@@ -621,9 +672,23 @@ class JobOrchestrator:
             message = f'Job not found for transition: {job_id}'
             raise ValueError(message)
 
+        event_transition_details = _resolve_transition_details(
+            to_state=to_state,
+            reason=reason,
+            transition_details=transition_details,
+        )
+
         try:
             require_transition(current_job.state, to_state)
         except ValueError:
+            event_details = {
+                'action': 'transition_job_with_outbox',
+                'from_state': current_job.state.value,
+                'to_state': to_state.value,
+                'reason': reason,
+            }
+            if len(event_transition_details) != 0:
+                event_details['transition_details'] = event_transition_details
             self._persistence_service.append_event(
                 AgentEvent(
                     timestamp=_utc_now(),
@@ -634,12 +699,7 @@ class JobOrchestrator:
                     source=EventSource.POLICY,
                     event_type=EventType.STATE_TRANSITION,
                     status=EventStatus.BLOCKED,
-                    details={
-                        'action': 'transition_job_with_outbox',
-                        'from_state': current_job.state.value,
-                        'to_state': to_state.value,
-                        'reason': reason,
-                    },
+                    details=event_details,
                 )
             )
             raise
@@ -650,6 +710,15 @@ class JobOrchestrator:
             reason,
             outbox_requests,
         )
+        event_details = {
+            'action': 'transition_job_with_outbox',
+            'from_state': current_job.state.value,
+            'to_state': updated_job.state.value,
+            'reason': reason,
+            'outbox_count': len(outbox_records),
+        }
+        if len(event_transition_details) != 0:
+            event_details['transition_details'] = event_transition_details
         self._persistence_service.append_event(
             AgentEvent(
                 timestamp=_utc_now(),
@@ -660,13 +729,7 @@ class JobOrchestrator:
                 source=EventSource.AGENT,
                 event_type=EventType.STATE_TRANSITION,
                 status=EventStatus.OK,
-                details={
-                    'action': 'transition_job_with_outbox',
-                    'from_state': current_job.state.value,
-                    'to_state': updated_job.state.value,
-                    'reason': reason,
-                    'outbox_count': len(outbox_records),
-                },
+                details=event_details,
             )
         )
         return updated_job, outbox_records

@@ -13,6 +13,7 @@ __all__ = [
     'release_promotion_gate_service',
     'rollout_stage_gate',
     'rollout_guard_service',
+    'runtime_controls_service',
     'runtime_scope_guard',
     'sentry_runtime',
     'structured_event_logger',

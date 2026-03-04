@@ -573,7 +573,7 @@ def test_ingress_coordinator_ignores_self_triggered_mentions(
                 repository='Vaquum/Agent1',
                 entity_number=93,
                 entity_type=IngressEntityType.ISSUE,
-                actor='zero-bang',
+                actor='runtime-agent-user',
                 event_type=IngressEventType.ISSUE_MENTION,
                 timestamp=datetime.now(timezone.utc),
                 details={},
@@ -590,7 +590,7 @@ def test_ingress_coordinator_ignores_self_triggered_mentions(
         author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
         github_client=fake_client,
     )
-    normalizer = GitHubIngressNormalizer(agent_actor='zero-bang')
+    normalizer = GitHubIngressNormalizer(agent_actor='runtime-agent-user')
     coordinator = GitHubIngressCoordinator(
         scanner=scanner,
         orchestrator=orchestrator,

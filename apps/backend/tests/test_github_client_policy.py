@@ -102,7 +102,7 @@ def _create_policies(
         {
             'version': '0.1.0',
             'repo_scope': ['Vaquum/Agent1'],
-            'agent_actor': 'zero-bang',
+            'agent_actor': 'runtime-agent-user',
             'ignored_actors': [],
             'ignored_actor_suffixes': ['[bot]'],
             'deny_git_commands': ['git push --force'],
@@ -118,9 +118,9 @@ def _create_policies(
             'default_deny_github_capabilities': True,
             'fail_closed_policy_resolution': fail_closed_policy_resolution,
             'mutating_credential_owner_by_environment': {
-                'dev': 'zero-bang',
-                'prod': 'zero-bang',
-                'ci': 'zero-bang',
+                'dev': 'runtime-agent-user',
+                'prod': 'runtime-agent-user',
+                'ci': 'runtime-agent-user',
             },
             'github_capabilities': capability_payload,
             'rules': [],
@@ -133,7 +133,7 @@ def _create_settings(
 ) -> Settings:
     return Settings(
         github_api_url='https://api.github.com',
-        github_user='zero-bang',
+        github_user='runtime-agent-user',
         github_token=github_token,
     )
 
@@ -228,7 +228,7 @@ def test_github_client_uses_shared_token_for_read_and_write_paths(
         if request.full_url.endswith('/notifications?all=true&participating=false&per_page=100&page=1'):
             return _FakeResponse([])
         if request.full_url.endswith('/user'):
-            return _FakeResponse({'login': 'zero-bang'})
+            return _FakeResponse({'login': 'runtime-agent-user'})
         if request.full_url.endswith('/repos/Vaquum/Agent1/issues/3/comments'):
             return _FakeResponse({'id': 123})
 
@@ -253,6 +253,45 @@ def test_github_client_uses_shared_token_for_read_and_write_paths(
     assert request_headers[1][1] == 'Bearer shared-token'
     assert request_headers[2][0].endswith('/repos/Vaquum/Agent1/issues/3/comments')
     assert request_headers[2][1] == 'Bearer shared-token'
+
+
+def test_github_client_submits_pull_request_review_with_shared_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    policies = _create_policies()
+    settings = _create_settings(github_token='shared-token')
+    request_headers: list[tuple[str, str]] = []
+
+    def _urlopen(request: Request, timeout: int = 0) -> _FakeResponse:
+        _ = timeout
+        authorization = request.get_header('Authorization') or ''
+        request_headers.append((request.full_url, authorization))
+        if request.full_url.endswith('/user'):
+            return _FakeResponse({'login': 'runtime-agent-user'})
+        if request.full_url.endswith('/repos/Vaquum/Agent1/pulls/4/reviews'):
+            return _FakeResponse({'id': 222, 'state': 'CHANGES_REQUESTED'})
+
+        return _FakeResponse({})
+
+    monkeypatch.setattr(github_client_module, 'urlopen', _urlopen)
+    client = UrlLibGitHubApiClient(
+        settings=settings,
+        policies=policies,
+        environment=EnvironmentName.DEV,
+    )
+
+    payload = client.submit_pull_request_review(
+        repository='Vaquum/Agent1',
+        pull_number=4,
+        body='requesting changes',
+        event='REQUEST_CHANGES',
+    )
+
+    assert payload.get('id') == 222
+    assert request_headers[0][0].endswith('/user')
+    assert request_headers[0][1] == 'Bearer shared-token'
+    assert request_headers[1][0].endswith('/repos/Vaquum/Agent1/pulls/4/reviews')
+    assert request_headers[1][1] == 'Bearer shared-token'
 
 
 def test_github_client_fails_closed_when_policy_resolution_is_missing(

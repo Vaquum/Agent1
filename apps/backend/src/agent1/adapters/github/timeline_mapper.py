@@ -48,6 +48,23 @@ def _parse_timestamp(*timestamp_values: str) -> datetime | None:
     return None
 
 
+def _resolve_event_id_suffix(
+    timeline_payload: Mapping[str, object],
+    timeline_event_name: str,
+    index: int,
+) -> str:
+    timeline_id = timeline_payload.get('id')
+    if timeline_id is not None:
+        return str(timeline_id)
+
+    if timeline_event_name == 'committed':
+        commit_sha = _get_string(timeline_payload, 'sha')
+        if commit_sha != '':
+            return f"sha:{commit_sha}"
+
+    return str(index)
+
+
 def _build_details(
     timeline_payload: Mapping[str, object],
     timeline_event_name: str,
@@ -56,10 +73,11 @@ def _build_details(
     details: dict[str, object] = {
         'timeline_event_name': timeline_event_name,
     }
+    if job_kind_hint is not None:
+        details['job_kind_hint'] = job_kind_hint
     if timeline_event_name == 'committed':
         details['requires_follow_up'] = True
-        if job_kind_hint is not None:
-            details['job_kind_hint'] = job_kind_hint
+        details['commit_sha'] = _get_string(timeline_payload, 'sha')
         return details
 
     if timeline_event_name not in {'commented', 'reviewed'}:
@@ -136,11 +154,16 @@ class GitHubTimelineMapper:
             if ingress_event_type is None:
                 continue
 
-            timeline_id = timeline_payload.get('id')
-            event_id_suffix = str(timeline_id) if timeline_id is not None else str(index)
+            event_id_suffix = _resolve_event_id_suffix(
+                timeline_payload=timeline_payload,
+                timeline_event_name=timeline_event_name,
+                index=index,
+            )
             timestamp = _parse_timestamp(
                 _get_string(timeline_payload, 'created_at'),
                 _get_string(timeline_payload, 'submitted_at'),
+                _get_string(_get_dict(timeline_payload, 'author'), 'date'),
+                _get_string(_get_dict(timeline_payload, 'committer'), 'date'),
             )
             if timestamp is None:
                 continue

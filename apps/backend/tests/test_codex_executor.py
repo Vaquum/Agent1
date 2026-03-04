@@ -92,7 +92,7 @@ def _create_policies(allowed_git_mutation_commands: list[str]) -> PoliciesContro
         {
             'version': '0.1.0',
             'repo_scope': ['Vaquum/Agent1'],
-            'agent_actor': 'zero-bang',
+            'agent_actor': 'runtime-agent-user',
             'ignored_actors': [],
             'ignored_actor_suffixes': ['[bot]'],
             'deny_git_commands': ['git push --force'],
@@ -108,9 +108,9 @@ def _create_policies(allowed_git_mutation_commands: list[str]) -> PoliciesContro
             'default_deny_github_capabilities': True,
             'fail_closed_policy_resolution': True,
             'mutating_credential_owner_by_environment': {
-                'dev': 'zero-bang',
-                'prod': 'zero-bang',
-                'ci': 'zero-bang',
+                'dev': 'runtime-agent-user',
+                'prod': 'runtime-agent-user',
+                'ci': 'runtime-agent-user',
             },
             'github_capabilities': {
                 'read_notifications': True,

@@ -44,6 +44,13 @@ class GitHubApiClient(Protocol):
     ) -> list[dict[str, object]]:
         ...
 
+    def fetch_pull_request_review_comments(
+        self,
+        repository: str,
+        pull_number: int,
+    ) -> list[dict[str, object]]:
+        ...
+
     def fetch_pull_request_check_runs(
         self,
         repository: str,
@@ -62,6 +69,23 @@ class GitHubApiClient(Protocol):
         self,
         repository: str,
         pull_number: int,
+    ) -> dict[str, object]:
+        ...
+
+    def fetch_pull_request_files(
+        self,
+        repository: str,
+        pull_number: int,
+    ) -> list[dict[str, object]]:
+        ...
+
+    def submit_pull_request_review(
+        self,
+        repository: str,
+        pull_number: int,
+        body: str,
+        event: str = 'COMMENT',
+        comments: list[dict[str, object]] | None = None,
     ) -> dict[str, object]:
         ...
 
@@ -115,12 +139,16 @@ class UrlLibGitHubApiClient:
 
     def _create_headers(self, for_mutation: bool) -> dict[str, str]:
         token = self._resolve_token(for_mutation)
+        github_user = self._settings.github_user.strip()
+        if github_user == '':
+            message = 'Missing GITHUB_USER for API client.'
+            raise GitHubPolicyError(message)
 
         return {
             'Accept': 'application/vnd.github+json',
             'Authorization': f"Bearer {token}",
             'X-GitHub-Api-Version': '2022-11-28',
-            'User-Agent': self._settings.github_user,
+            'User-Agent': github_user,
         }
 
     def _require_capability(self, capability: str) -> None:
@@ -137,14 +165,12 @@ class UrlLibGitHubApiClient:
         raise GitHubPolicyError(message)
 
     def _expected_mutating_owner(self) -> str:
-        owners = self._policies.mutating_credential_owner_by_environment
-        if self._environment == EnvironmentName.PROD:
-            return owners.prod
+        expected_owner = self._settings.github_user.strip()
+        if expected_owner == '':
+            message = 'Missing GITHUB_USER for mutating credential owner preflight.'
+            raise GitHubPolicyError(message)
 
-        if self._environment == EnvironmentName.CI:
-            return owners.ci
-
-        return owners.dev
+        return expected_owner
 
     def _resolve_token_owner(self, token: str) -> str:
         cached_owner = self._owner_cache.get(token)
@@ -155,7 +181,7 @@ class UrlLibGitHubApiClient:
             'Accept': 'application/vnd.github+json',
             'Authorization': f"Bearer {token}",
             'X-GitHub-Api-Version': '2022-11-28',
-            'User-Agent': self._settings.github_user,
+            'User-Agent': self._settings.github_user.strip(),
         }
         request = Request(
             url=f'{self._settings.github_api_url}/user',
@@ -183,9 +209,6 @@ class UrlLibGitHubApiClient:
             return
 
         expected_owner = self._expected_mutating_owner().strip()
-        if expected_owner == '':
-            message = 'Mutating credential owner policy is missing for active environment.'
-            raise GitHubPolicyError(message)
 
         token = self._resolve_token(for_mutation=True)
         actual_owner = self._resolve_token_owner(token)
@@ -297,6 +320,35 @@ class UrlLibGitHubApiClient:
 
         return [item for item in payload if isinstance(item, dict)]
 
+    def fetch_pull_request_review_comments(
+        self,
+        repository: str,
+        pull_number: int,
+    ) -> list[dict[str, object]]:
+
+        '''
+        Create pull request review-comment payload list for thread-update ingestion.
+
+        Args:
+        repository (str): Repository full name in owner/repo format.
+        pull_number (int): Pull request number.
+
+        Returns:
+        list[dict[str, object]]: Pull request review-comment payload list.
+        '''
+
+        self._require_capability(READ_PR_TIMELINE_CAPABILITY)
+        url = (
+            f"{self._settings.github_api_url}/repos/{repository}/pulls/{pull_number}/comments"
+            '?per_page=100'
+        )
+        payload = self._request_json(url)
+        if not isinstance(payload, list):
+            message = 'GitHub pull review comments response must be a list payload.'
+            raise ValueError(message)
+
+        return [item for item in payload if isinstance(item, dict)]
+
     def fetch_pull_request_check_runs(
         self,
         repository: str,
@@ -383,6 +435,92 @@ class UrlLibGitHubApiClient:
 
         url = f"{self._settings.github_api_url}/repos/{repository}/pulls/{pull_number}"
         payload = self._request_json(url)
+        if not isinstance(payload, dict):
+            return {}
+
+        return payload
+
+    def fetch_pull_request_files(
+        self,
+        repository: str,
+        pull_number: int,
+    ) -> list[dict[str, object]]:
+
+        '''
+        Create pull request file payload list from GitHub pull request files endpoint.
+
+        Args:
+        repository (str): Repository full name in owner/repo format.
+        pull_number (int): Pull request number.
+
+        Returns:
+        list[dict[str, object]]: Pull request file payload list.
+        '''
+
+        self._require_capability(READ_PULL_REQUEST_CAPABILITY)
+
+        file_payloads: list[dict[str, object]] = []
+        page = 1
+        per_page = 100
+        while page <= 10:
+            query = urlencode({'per_page': str(per_page), 'page': str(page)})
+            url = (
+                f"{self._settings.github_api_url}/repos/{repository}/pulls/{pull_number}/files"
+                f'?{query}'
+            )
+            payload = self._request_json(url)
+            if not isinstance(payload, list):
+                break
+
+            page_items = [item for item in payload if isinstance(item, dict)]
+            if len(page_items) == 0:
+                break
+            file_payloads.extend(page_items)
+            if len(page_items) < per_page:
+                break
+            page += 1
+
+        return file_payloads
+
+    def submit_pull_request_review(
+        self,
+        repository: str,
+        pull_number: int,
+        body: str,
+        event: str = 'COMMENT',
+        comments: list[dict[str, object]] | None = None,
+    ) -> dict[str, object]:
+
+        '''
+        Create pull request review submission using GitHub reviews API endpoint.
+
+        Args:
+        repository (str): Repository full name in owner/repo format.
+        pull_number (int): Pull request number.
+        body (str): Markdown review body payload.
+        event (str): Review event type (`COMMENT`, `APPROVE`, `REQUEST_CHANGES`).
+        comments (list[dict[str, object]] | None): Optional inline review comments payload.
+
+        Returns:
+        dict[str, object]: Pull request review response payload.
+        '''
+
+        self._require_capability(WRITE_PR_REVIEW_REPLY_CAPABILITY)
+
+        url = f"{self._settings.github_api_url}/repos/{repository}/pulls/{pull_number}/reviews"
+        request_payload: dict[str, object] = {
+            'body': body,
+            'event': event,
+        }
+        if comments is not None:
+            request_payload['comments'] = comments
+
+        payload = self._request_json(
+            url=url,
+            method='POST',
+            payload=request_payload,
+            for_mutation=True,
+        )
         if not isinstance(payload, dict):
             return {}
 

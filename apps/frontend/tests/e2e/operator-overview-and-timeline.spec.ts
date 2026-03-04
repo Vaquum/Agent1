@@ -135,11 +135,11 @@ test('covers overview filter and timeline drill-down operator flow', async ({ pa
   await page.getByRole('button', { name: 'Apply' }).click()
   await filterRequest
 
-  await page.getByTestId('select-job-timeline').first().click()
-  await expect(page.getByRole('heading', { name: 'Job Timeline: job_e2e_1' })).toBeVisible()
+  await page.getByTestId('toggle-job-timeline').first().click()
+  await expect(page.getByText('Timeline events (1)')).toBeVisible()
 
-  await page.getByTestId('inspect-timeline-event').first().click()
-  await expect(page.getByRole('heading', { name: 'Selected Timeline Event' })).toBeVisible()
+  await page.getByTestId('toggle-timeline-event').first().click()
+  await expect(page.getByRole('heading', { name: 'Timeline Event Inspection' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Correlated Transitions' })).toBeVisible()
 
   expect(overviewRequestUrls.length).toBeGreaterThanOrEqual(2)

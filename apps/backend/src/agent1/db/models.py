@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from datetime import timezone
 
+from sqlalchemy import BigInteger
 from sqlalchemy import Boolean
 from sqlalchemy import DateTime
 from sqlalchemy import Enum
@@ -351,7 +352,7 @@ class CommentTargetModel(Base):
     issue_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     pr_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     thread_id: Mapped[str | None] = mapped_column(String(MAX_ID_LENGTH), nullable=True)
-    review_comment_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    review_comment_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     path: Mapped[str | None] = mapped_column(String(MAX_ENTITY_KEY_LENGTH), nullable=True)
     line: Mapped[int | None] = mapped_column(Integer, nullable=True)
     side: Mapped[str | None] = mapped_column(String(20), nullable=True)

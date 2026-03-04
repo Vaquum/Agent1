@@ -5,7 +5,10 @@ from fastapi import Depends
 from fastapi import HTTPException
 from fastapi import Path
 from fastapi import Query
+from fastapi import Request
 
+from agent1.api.dashboard_contracts import DashboardActiveRepositoriesResponse
+from agent1.api.dashboard_contracts import DashboardActiveRepositoriesUpdateRequest
 from agent1.api.dashboard_contracts import DashboardJobTimelineResponse
 from agent1.api.dashboard_contracts import DashboardOverviewResponse
 from agent1.api.dashboard_contracts import StopTheLineAcknowledgeRequest
@@ -14,6 +17,7 @@ from agent1.core.contracts import EnvironmentName
 from agent1.core.contracts import EventStatus
 from agent1.core.services.alert_signal_service import AlertSignalService
 from agent1.core.services.dashboard_service import DashboardService
+from agent1.core.services.runtime_controls_service import RuntimeControlsService
 
 router = APIRouter()
 
@@ -40,6 +44,22 @@ def get_alert_signal_service() -> AlertSignalService:
     '''
 
     return AlertSignalService()
+
+
+def _get_runtime_controls_service(request: Request) -> RuntimeControlsService:
+    runtime_controls_service = getattr(request.app.state, 'runtime_controls_service', None)
+    if not isinstance(runtime_controls_service, RuntimeControlsService):
+        raise HTTPException(status_code=500, detail='Runtime controls service is unavailable.')
+
+    return runtime_controls_service
+
+
+def _get_ingress_coordinator(request: Request) -> object:
+    ingress_coordinator = getattr(request.app.state, 'ingress_coordinator', None)
+    if ingress_coordinator is None or not hasattr(ingress_coordinator, 'set_active_repositories'):
+        raise HTTPException(status_code=500, detail='Ingress coordinator is unavailable.')
+
+    return ingress_coordinator
 
 
 @router.get('/dashboard/overview', response_model=DashboardOverviewResponse)
@@ -76,6 +96,73 @@ def get_dashboard_overview(
         job_id=job_id,
         trace_id=trace_id,
         status=status,
+    )
+
+
+@router.get(
+    '/dashboard/controls/active-repositories',
+    response_model=DashboardActiveRepositoriesResponse,
+)
+def get_dashboard_active_repositories(request: Request) -> DashboardActiveRepositoriesResponse:
+
+    '''
+    Create runtime active-repository scope payload for dashboard controls view.
+
+    Args:
+    request (Request): FastAPI request object exposing runtime app state.
+
+    Returns:
+    DashboardActiveRepositoriesResponse: Runtime active repository scope payload.
+    '''
+
+    runtime_controls_service = _get_runtime_controls_service(request)
+    return DashboardActiveRepositoriesResponse(
+        active_repositories=runtime_controls_service.get_active_repositories(),
+    )
+
+
+@router.put(
+    '/dashboard/controls/active-repositories',
+    response_model=DashboardActiveRepositoriesResponse,
+)
+def update_dashboard_active_repositories(
+    update_request: DashboardActiveRepositoriesUpdateRequest,
+    request: Request,
+) -> DashboardActiveRepositoriesResponse:
+
+    '''
+    Create runtime active-repository scope update from dashboard controls payload.
+
+    Args:
+    update_request (DashboardActiveRepositoriesUpdateRequest): Active repository update payload.
+    request (Request): FastAPI request object exposing runtime app state.
+
+    Returns:
+    DashboardActiveRepositoriesResponse: Persisted runtime active repository scope payload.
+    '''
+
+    runtime_controls_service = _get_runtime_controls_service(request)
+    try:
+        updated_active_repositories = runtime_controls_service.replace_active_repositories(
+            update_request.active_repositories,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except OSError as error:
+        raise HTTPException(
+            status_code=500,
+            detail='Failed to persist runtime controls update.',
+        ) from error
+
+    ingress_coordinator = _get_ingress_coordinator(request)
+    ingress_coordinator.set_active_repositories(updated_active_repositories)
+
+    control_bundle = getattr(request.app.state, 'control_bundle', None)
+    if control_bundle is not None:
+        control_bundle.runtime.active_repositories = updated_active_repositories
+
+    return DashboardActiveRepositoriesResponse(
+        active_repositories=updated_active_repositories,
     )
 
 
@@ -148,8 +235,10 @@ def acknowledge_stop_the_line_alert(
 
 __all__ = [
     'router',
+    'get_dashboard_active_repositories',
     'get_dashboard_job_timeline',
     'get_dashboard_overview',
+    'update_dashboard_active_repositories',
     'acknowledge_stop_the_line_alert',
     'get_alert_signal_service',
     'get_dashboard_service',

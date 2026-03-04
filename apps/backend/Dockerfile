@@ -15,6 +15,10 @@ COPY controls /app/controls
 COPY apps/backend/docker/entrypoint.sh /app/apps/backend/docker/entrypoint.sh
 
 RUN python -m pip install --upgrade pip && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends npm git && \
+    npm install -g @openai/codex && \
+    rm -rf /var/lib/apt/lists/* && \
     pip install -e /app/apps/backend && \
     chmod +x /app/apps/backend/docker/entrypoint.sh
 

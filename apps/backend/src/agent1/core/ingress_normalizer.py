@@ -20,6 +20,25 @@ IGNORED_ACTOR_EVENT_TYPES = frozenset(
 DEFAULT_IGNORED_ACTOR_SUFFIXES = ('[bot]',)
 
 
+def _normalize_active_repositories(active_repositories: list[str] | None) -> set[str]:
+
+    '''
+    Create normalized active-repository scope set for ingress filtering.
+
+    Args:
+    active_repositories (list[str] | None): Raw repository scope values.
+
+    Returns:
+    set[str]: Normalized repository scope set.
+    '''
+
+    return {
+        repository.strip()
+        for repository in (active_repositories or [])
+        if repository.strip() != ''
+    }
+
+
 class GitHubIngressNormalizer:
     def __init__(
         self,
@@ -29,17 +48,13 @@ class GitHubIngressNormalizer:
         require_sandbox_scope_for_dev_active: bool = False,
         sandbox_label: str = 'agent1-sandbox',
         sandbox_branch_prefix: str = 'sandbox/',
-        agent_actor: str = 'zero-bang',
+        agent_actor: str = '',
         ignored_actors: list[str] | None = None,
         ignored_actor_suffixes: list[str] | None = None,
     ) -> None:
         self._environment = environment
         self._runtime_mode = runtime_mode
-        self._active_repositories = {
-            repository.strip()
-            for repository in (active_repositories or [])
-            if repository.strip() != ''
-        }
+        self._active_repositories = _normalize_active_repositories(active_repositories)
         self._require_sandbox_scope_for_dev_active = require_sandbox_scope_for_dev_active
         self._sandbox_label = sandbox_label.strip()
         self._sandbox_branch_prefix = sandbox_branch_prefix.strip()
@@ -58,6 +73,28 @@ class GitHubIngressNormalizer:
             )
             if suffix.strip() != ''
         )
+
+    def set_active_repositories(self, active_repositories: list[str]) -> None:
+
+        '''
+        Create runtime active-repository scope update for ingress filtering.
+
+        Args:
+        active_repositories (list[str]): Runtime active repository scope list.
+        '''
+
+        self._active_repositories = _normalize_active_repositories(active_repositories)
+
+    def get_active_repositories(self) -> list[str]:
+
+        '''
+        Create sorted runtime active-repository scope list for diagnostics.
+
+        Returns:
+        list[str]: Sorted runtime active repository scope list.
+        '''
+
+        return sorted(self._active_repositories)
 
     def _is_ignored_actor_event(self, ingress_event: GitHubIngressEvent) -> bool:
         if ingress_event.event_type not in IGNORED_ACTOR_EVENT_TYPES:
@@ -135,6 +172,23 @@ class GitHubIngressNormalizer:
         if job_kind_hint == JobKind.PR_REVIEWER.value:
             return JobKind.PR_REVIEWER
 
+        pull_author_login = str(ingress_event.details.get('pull_author_login', '')).strip().lower()
+        if (
+            ingress_event.event_type == IngressEventType.PR_MENTION
+            and pull_author_login != ''
+            and pull_author_login != self._agent_actor
+        ):
+            return JobKind.PR_REVIEWER
+
+        requires_follow_up = bool(ingress_event.details.get('requires_follow_up', False))
+        if (
+            ingress_event.event_type == IngressEventType.PR_UPDATED
+            and requires_follow_up
+            and pull_author_login != ''
+            and pull_author_login != self._agent_actor
+        ):
+            return JobKind.PR_REVIEWER
+
         return JobKind.PR_AUTHOR
 
     def _compute_initial_state(self, ingress_event: GitHubIngressEvent) -> JobState:
@@ -148,10 +202,25 @@ class GitHubIngressNormalizer:
         return JobState.READY_TO_EXECUTE
 
     def _compute_transition(self, ingress_event: GitHubIngressEvent) -> tuple[JobState | None, str | None]:
+        issue_state = str(ingress_event.details.get('issue_state', '')).strip().lower()
+        if ingress_event.entity_type.value == 'issue' and issue_state == 'closed':
+            return JobState.COMPLETED, 'issue_human_terminal_decision_closed'
+
+        pull_is_merged = ingress_event.details.get('pull_is_merged')
+        if ingress_event.entity_type.value == 'pr' and pull_is_merged is True:
+            return JobState.COMPLETED, 'pr_human_terminal_decision_merged'
+
+        pull_state = str(ingress_event.details.get('pull_state', '')).strip().lower()
+        if ingress_event.entity_type.value == 'pr' and pull_state == 'closed':
+            return JobState.COMPLETED, 'pr_human_terminal_decision_closed'
+
         if ingress_event.event_type in (
             IngressEventType.ISSUE_MENTION,
             IngressEventType.PR_MENTION,
         ):
+            return JobState.READY_TO_EXECUTE, ingress_event.event_type.value
+
+        if ingress_event.event_type == IngressEventType.PR_REVIEW_REQUESTED:
             return JobState.READY_TO_EXECUTE, ingress_event.event_type.value
 
         if ingress_event.event_type == IngressEventType.ISSUE_UPDATED:
@@ -161,10 +230,20 @@ class GitHubIngressNormalizer:
 
             return None, None
 
-        if ingress_event.event_type in (
-            IngressEventType.PR_REVIEW_COMMENT,
-            IngressEventType.PR_CI_FAILED,
-        ):
+        if ingress_event.event_type == IngressEventType.PR_REVIEW_COMMENT:
+            job_kind_hint = ingress_event.details.get('job_kind_hint')
+            if job_kind_hint == JobKind.PR_REVIEWER.value:
+                is_review_thread_comment = bool(
+                    ingress_event.details.get('is_review_thread_comment', False),
+                )
+                if is_review_thread_comment:
+                    return JobState.READY_TO_EXECUTE, ingress_event.event_type.value
+
+                return None, None
+
+            return JobState.READY_TO_EXECUTE, ingress_event.event_type.value
+
+        if ingress_event.event_type == IngressEventType.PR_CI_FAILED:
             return JobState.READY_TO_EXECUTE, ingress_event.event_type.value
 
         requires_follow_up = bool(ingress_event.details.get('requires_follow_up', False))
@@ -206,7 +285,10 @@ class GitHubIngressNormalizer:
 
         return NormalizedIngressEvent(
             event_id=ingress_event.event_id,
-            trace_id=f"trc_{ingress_event.event_id}",
+            trace_id=(
+                f"trc_{ingress_event.event_id}_"
+                f"{int(ingress_event.timestamp.timestamp() * 1_000_000)}"
+            ),
             environment=self._environment,
             repository=ingress_event.repository,
             entity_number=ingress_event.entity_number,
@@ -217,7 +299,11 @@ class GitHubIngressNormalizer:
             should_claim_lease=True,
             transition_to=transition_to,
             transition_reason=transition_reason,
-            idempotency_key=f"{ingress_event.event_id}:{ingress_event.event_type.value}",
+            idempotency_key=(
+                f"{ingress_event.event_id}:"
+                f"{ingress_event.event_type.value}:"
+                f"{ingress_event.timestamp.isoformat()}"
+            ),
             details={
                 'actor': ingress_event.actor,
                 'ingress_event_type': ingress_event.event_type.value,

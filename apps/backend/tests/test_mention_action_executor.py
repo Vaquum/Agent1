@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from datetime import timezone
+from pathlib import Path
+from types import SimpleNamespace
 
+import pytest
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker
 
@@ -120,11 +124,66 @@ def _create_normalized_event(
     )
 
 
+def _create_reviewer_pull_request_files() -> list[dict[str, object]]:
+    return [
+        {
+            'filename': 'apps/backend/src/agent1/main.py',
+            'patch': (
+                '@@ -1,3 +1,4 @@\n'
+                ' line_one\n'
+                '+line_two\n'
+                ' line_three\n'
+            ),
+        },
+        {
+            'filename': 'apps/backend/src/agent1/core/services/comment_router.py',
+            'patch': (
+                '@@ -10,3 +10,4 @@\n'
+                ' line_a\n'
+                '+line_b\n'
+                ' line_c\n'
+            ),
+        },
+    ]
+
+
+def _create_reviewer_inline_payload(summary: str) -> str:
+    return json.dumps(
+        {
+            'summary': summary,
+            'comments': [
+                {
+                    'path': 'apps/backend/src/agent1/main.py',
+                    'line': 2,
+                    'side': 'RIGHT',
+                    'body': 'Inline finding one.',
+                },
+                {
+                    'path': 'apps/backend/src/agent1/core/services/comment_router.py',
+                    'line': 11,
+                    'side': 'RIGHT',
+                    'body': 'Inline finding two.',
+                },
+            ],
+        }
+    )
+
+
 class _FakeGitHubClient:
-    def __init__(self, should_fail: bool = False) -> None:
+    def __init__(
+        self,
+        should_fail: bool = False,
+        issue_payload: dict[str, object] | None = None,
+        pull_request_payload: dict[str, object] | None = None,
+        pull_request_files: list[dict[str, object]] | None = None,
+    ) -> None:
         self._should_fail = should_fail
+        self._issue_payload = issue_payload or {}
+        self._pull_request_payload = pull_request_payload or {}
+        self._pull_request_files = pull_request_files or []
         self.comment_calls: list[dict[str, object]] = []
         self.thread_reply_calls: list[dict[str, object]] = []
+        self.review_submission_calls: list[dict[str, object]] = []
 
     def fetch_notifications(
         self,
@@ -153,14 +212,25 @@ class _FakeGitHubClient:
         repository: str,
         issue_number: int,
     ) -> dict[str, object]:
-        return {}
+        return dict(self._issue_payload)
 
     def fetch_pull_request(
         self,
         repository: str,
         pull_number: int,
     ) -> dict[str, object]:
-        return {}
+        _ = repository
+        _ = pull_number
+        return dict(self._pull_request_payload)
+
+    def fetch_pull_request_files(
+        self,
+        repository: str,
+        pull_number: int,
+    ) -> list[dict[str, object]]:
+        _ = repository
+        _ = pull_number
+        return [dict(payload) for payload in self._pull_request_files]
 
     def post_issue_comment(
         self,
@@ -200,10 +270,37 @@ class _FakeGitHubClient:
 
         return {'id': review_comment_id, 'body': body}
 
+    def submit_pull_request_review(
+        self,
+        repository: str,
+        pull_number: int,
+        body: str,
+        event: str = 'COMMENT',
+        comments: list[dict[str, object]] | None = None,
+    ) -> dict[str, object]:
+        self.review_submission_calls.append(
+            {
+                'repository': repository,
+                'pull_number': pull_number,
+                'body': body,
+                'event': event,
+                'comments': comments,
+            }
+        )
+        if self._should_fail:
+            raise RuntimeError('comment failure')
+
+        return {'id': 1, 'body': body, 'event': event}
+
 
 class _FakeCodexExecutor:
-    def __init__(self, status: ExecutionStatus = ExecutionStatus.SUCCEEDED) -> None:
+    def __init__(
+        self,
+        status: ExecutionStatus = ExecutionStatus.SUCCEEDED,
+        last_message: str = 'codex output',
+    ) -> None:
         self._status = status
+        self._last_message = last_message
         self.execute_calls: list[dict[str, object]] = []
 
     def execute_task(
@@ -232,7 +329,7 @@ class _FakeCodexExecutor:
             summary='codex execution',
             command='codex exec',
             exit_code=0 if self._status == ExecutionStatus.SUCCEEDED else 1,
-            metadata={},
+            metadata={'last_message': self._last_message},
         )
 
 
@@ -242,7 +339,9 @@ def test_mention_action_executor_posts_comment_and_advances_state(
     persistence_service = PersistenceService(session_factory=session_factory)
     orchestrator = JobOrchestrator(persistence_service=persistence_service)
     created = orchestrator.create_job(_create_record('Vaquum_Agent1#25:issue'), trace_id='trc_create')
-    fake_client = _FakeGitHubClient()
+    fake_client = _FakeGitHubClient(
+        issue_payload={'body': 'Respond "hello world" if you see this message.'},
+    )
     executor = MentionActionExecutor(
         response_template='Ack {entity_key}',
         clarification_template='Need clarification for {entity_key}',
@@ -261,8 +360,8 @@ def test_mention_action_executor_posts_comment_and_advances_state(
         outbox_entries = verification_session.query(OutboxEntryModel).all()
 
     assert len(fake_client.comment_calls) == 1
-    assert fake_client.comment_calls[0]['body'] == 'Ack Vaquum/Agent1#25'
-    assert updated.state == JobState.AWAITING_HUMAN_FEEDBACK
+    assert fake_client.comment_calls[0]['body'] == 'hello world'
+    assert updated.state == JobState.COMPLETED
     assert len(comment_targets) == 1
     assert comment_targets[0].target_type == CommentTargetType.ISSUE
     assert len(outbox_entries) == 1
@@ -301,6 +400,33 @@ def test_mention_action_executor_handles_issue_updated_resume_event(
     )
 
     assert len(fake_client.comment_calls) == 1
+    assert fake_client.comment_calls[0]['body'] == 'Need clarification for Vaquum/Agent1#25'
+    assert updated.state == JobState.AWAITING_HUMAN_FEEDBACK
+
+
+def test_mention_action_executor_requests_clarification_without_directive(
+    session_factory: sessionmaker[Session],
+) -> None:
+    persistence_service = PersistenceService(session_factory=session_factory)
+    orchestrator = JobOrchestrator(persistence_service=persistence_service)
+    created = orchestrator.create_job(_create_record('Vaquum_Agent1#25:issue'), trace_id='trc_create')
+    fake_client = _FakeGitHubClient(issue_payload={'body': 'Please help me with this issue.'})
+    executor = MentionActionExecutor(
+        response_template='Ack {entity_key}',
+        clarification_template='Need clarification for {entity_key}',
+        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
+        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
+        github_client=fake_client,
+    )
+
+    updated = executor.execute_for_event(
+        normalized_event=_create_normalized_event('issue_mention'),
+        current_job=created,
+        orchestrator=orchestrator,
+    )
+
+    assert len(fake_client.comment_calls) == 1
+    assert fake_client.comment_calls[0]['body'] == 'Need clarification for Vaquum/Agent1#25'
     assert updated.state == JobState.AWAITING_HUMAN_FEEDBACK
 
 
@@ -349,13 +475,19 @@ def test_mention_action_executor_handles_reviewer_request_event(
         _create_reviewer_record('Vaquum_Agent1#25:pr_reviewer'),
         trace_id='trc_create',
     )
-    fake_client = _FakeGitHubClient()
+    fake_client = _FakeGitHubClient(
+        pull_request_files=_create_reviewer_pull_request_files(),
+    )
+    fake_codex = _FakeCodexExecutor(
+        last_message=_create_reviewer_inline_payload('Reviewer summary A'),
+    )
     executor = MentionActionExecutor(
         response_template='Ack {entity_key}',
         clarification_template='Need clarification for {entity_key}',
         reviewer_follow_up_template='Reviewer follow-up {entity_key}',
         author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
         github_client=fake_client,
+        codex_executor=fake_codex,
     )
 
     updated = executor.execute_for_event(
@@ -368,8 +500,18 @@ def test_mention_action_executor_handles_reviewer_request_event(
         orchestrator=orchestrator,
     )
 
-    assert len(fake_client.comment_calls) == 1
-    assert fake_client.comment_calls[0]['body'] == 'Reviewer follow-up Vaquum/Agent1#25'
+    assert len(fake_client.review_submission_calls) == 1
+    assert fake_client.review_submission_calls[0]['body'] == 'Reviewer summary A'
+    assert fake_client.review_submission_calls[0]['event'] == 'COMMENT'
+    review_comments = fake_client.review_submission_calls[0]['comments']
+    assert isinstance(review_comments, list)
+    assert len(review_comments) == 2
+    assert review_comments[0]['path'] == 'apps/backend/src/agent1/main.py'
+    assert review_comments[0]['line'] == 2
+    assert review_comments[1]['path'] == 'apps/backend/src/agent1/core/services/comment_router.py'
+    assert review_comments[1]['line'] == 11
+    assert len(fake_client.comment_calls) == 0
+    assert len(fake_client.thread_reply_calls) == 0
     assert updated.state == JobState.AWAITING_HUMAN_FEEDBACK
 
 
@@ -382,13 +524,19 @@ def test_mention_action_executor_handles_reviewer_follow_up_event(
         _create_reviewer_record('Vaquum_Agent1#25:pr_reviewer'),
         trace_id='trc_create',
     )
-    fake_client = _FakeGitHubClient()
+    fake_client = _FakeGitHubClient(
+        pull_request_files=_create_reviewer_pull_request_files(),
+    )
+    fake_codex = _FakeCodexExecutor(
+        last_message=_create_reviewer_inline_payload('Reviewer summary B'),
+    )
     executor = MentionActionExecutor(
         response_template='Ack {entity_key}',
         clarification_template='Need clarification for {entity_key}',
         reviewer_follow_up_template='Reviewer follow-up {entity_key}',
         author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
         github_client=fake_client,
+        codex_executor=fake_codex,
     )
 
     updated = executor.execute_for_event(
@@ -402,8 +550,60 @@ def test_mention_action_executor_handles_reviewer_follow_up_event(
         orchestrator=orchestrator,
     )
 
-    assert len(fake_client.comment_calls) == 1
-    assert fake_client.comment_calls[0]['body'] == 'Reviewer follow-up Vaquum/Agent1#25'
+    assert len(fake_client.review_submission_calls) == 1
+    assert fake_client.review_submission_calls[0]['body'] == 'Reviewer summary B'
+    assert fake_client.review_submission_calls[0]['event'] == 'COMMENT'
+    review_comments = fake_client.review_submission_calls[0]['comments']
+    assert isinstance(review_comments, list)
+    assert len(review_comments) == 2
+    assert len(fake_client.comment_calls) == 0
+    assert len(fake_client.thread_reply_calls) == 0
+    assert updated.state == JobState.AWAITING_HUMAN_FEEDBACK
+
+
+def test_mention_action_executor_routes_reviewer_thread_update_in_thread_only(
+    session_factory: sessionmaker[Session],
+) -> None:
+    persistence_service = PersistenceService(session_factory=session_factory)
+    orchestrator = JobOrchestrator(persistence_service=persistence_service)
+    created = orchestrator.create_job(
+        _create_reviewer_record('Vaquum_Agent1#25:pr_reviewer'),
+        trace_id='trc_create',
+    )
+    fake_client = _FakeGitHubClient()
+    fake_codex = _FakeCodexExecutor(last_message='thread reply body')
+    executor = MentionActionExecutor(
+        response_template='Ack {entity_key}',
+        clarification_template='Need clarification for {entity_key}',
+        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
+        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
+        github_client=fake_client,
+        codex_executor=fake_codex,
+    )
+
+    updated = executor.execute_for_event(
+        normalized_event=_create_normalized_event(
+            'pr_review_comment',
+            details={
+                'is_review_thread_comment': True,
+                'review_comment_id': 4401,
+                'thread_id': 'PRRC_kwDOAAABcd',
+                'path': 'apps/backend/src/agent1/main.py',
+                'line': 88,
+                'side': 'RIGHT',
+                'job_kind_hint': 'pr_reviewer',
+            },
+            job_kind=JobKind.PR_REVIEWER,
+            job_id='Vaquum_Agent1#25:pr_reviewer',
+        ),
+        current_job=created,
+        orchestrator=orchestrator,
+    )
+
+    assert len(fake_client.thread_reply_calls) == 1
+    assert fake_client.thread_reply_calls[0]['body'] == 'thread reply body'
+    assert len(fake_client.review_submission_calls) == 0
+    assert len(fake_client.comment_calls) == 0
     assert updated.state == JobState.AWAITING_HUMAN_FEEDBACK
 
 
@@ -529,6 +729,112 @@ def test_mention_action_executor_runs_codex_for_author_ci_event(
     assert updated.state == JobState.AWAITING_CI
 
 
+def test_mention_action_executor_passes_workspace_to_author_codex_execution(
+    session_factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    persistence_service = PersistenceService(session_factory=session_factory)
+    orchestrator = JobOrchestrator(persistence_service=persistence_service)
+    created = orchestrator.create_job(
+        _create_author_record('Vaquum_Agent1#25:pr_author'),
+        trace_id='trc_create',
+    )
+    fake_client = _FakeGitHubClient()
+    fake_codex = _FakeCodexExecutor(status=ExecutionStatus.SUCCEEDED)
+    executor = MentionActionExecutor(
+        response_template='Ack {entity_key}',
+        clarification_template='Need clarification for {entity_key}',
+        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
+        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
+        github_client=fake_client,
+        codex_executor=fake_codex,
+    )
+
+    workspace_path = '/tmp/agent1-repository-workspaces/Vaquum_Agent1'
+    monkeypatch.setattr(
+        executor,
+        '_build_author_codex_prompt',
+        lambda _normalized_event: 'author codex prompt',
+    )
+    monkeypatch.setattr(
+        executor,
+        '_resolve_author_codex_working_directory',
+        lambda _normalized_event: workspace_path,
+    )
+    updated = executor.execute_for_event(
+        normalized_event=_create_normalized_event(
+            'pr_ci_failed',
+            details={
+                'check_name': 'integration-tests',
+                'conclusion': 'failure',
+            },
+            job_kind=JobKind.PR_AUTHOR,
+            job_id='Vaquum_Agent1#25:pr_author',
+        ),
+        current_job=created,
+        orchestrator=orchestrator,
+    )
+
+    assert len(fake_codex.execute_calls) == 1
+    assert fake_codex.execute_calls[0]['working_directory'] == workspace_path
+    assert len(fake_client.comment_calls) == 1
+    assert updated.state == JobState.AWAITING_CI
+
+
+def test_resolve_author_codex_working_directory_prepares_clone_and_branch(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    fake_client = _FakeGitHubClient()
+    executor = MentionActionExecutor(
+        response_template='Ack {entity_key}',
+        clarification_template='Need clarification for {entity_key}',
+        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
+        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
+        github_client=fake_client,
+    )
+
+    recorded_git_calls: list[tuple[list[str], str | None]] = []
+
+    def _record_git_call(
+        command: list[str],
+        working_directory: object | None = None,
+    ) -> bool:
+        resolved_working_directory = None
+        if working_directory is not None:
+            resolved_working_directory = str(working_directory)
+        recorded_git_calls.append((command, resolved_working_directory))
+        return True
+
+    monkeypatch.setattr(executor, '_run_git_command', _record_git_call)
+    monkeypatch.setattr(
+        'agent1.core.services.mention_action_executor.get_settings',
+        lambda: SimpleNamespace(github_token='gho_test_token', github_user='bit-mis'),
+    )
+    monkeypatch.setattr(
+        'agent1.core.services.mention_action_executor.CODEX_REPOSITORY_WORKSPACE_ROOT',
+        str(tmp_path),
+    )
+    normalized_event = _create_normalized_event(
+        'pr_ci_failed',
+        details={
+            'head_ref': 'fix/ci-remediation',
+        },
+        job_kind=JobKind.PR_AUTHOR,
+        job_id='Vaquum_Agent1#25:pr_author',
+    )
+
+    resolved_working_directory = executor._resolve_author_codex_working_directory(normalized_event)
+
+    expected_workspace_path = tmp_path / 'Vaquum_Agent1'
+    assert resolved_working_directory == str(expected_workspace_path)
+    assert len(recorded_git_calls) == 5
+    assert recorded_git_calls[0][0][:2] == ['git', 'clone']
+    assert recorded_git_calls[1][0] == ['git', 'fetch', 'origin', 'fix/ci-remediation']
+    assert recorded_git_calls[2][0] == ['git', 'checkout', '-B', 'fix/ci-remediation', 'origin/fix/ci-remediation']
+    assert recorded_git_calls[3][0] == ['git', 'config', 'user.name', 'bit-mis']
+
+
 def test_mention_action_executor_blocks_when_codex_fails_for_author_ci_event(
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -562,10 +868,21 @@ def test_mention_action_executor_blocks_when_codex_fails_for_author_ci_event(
         current_job=created,
         orchestrator=orchestrator,
     )
+    with session_factory() as verification_session:
+        transition_events = [
+            event
+            for event in verification_session.query(EventJournalModel).all()
+            if event.details.get('action') == 'transition_job'
+            and event.details.get('reason') == 'author_codex_execution_failed'
+        ]
 
     assert len(fake_codex.execute_calls) == 1
     assert len(fake_client.comment_calls) == 0
     assert updated.state == JobState.BLOCKED
+    assert len(transition_events) == 1
+    transition_details = transition_events[0].details.get('transition_details')
+    assert isinstance(transition_details, dict)
+    assert transition_details.get('codex_summary') == 'codex execution'
 
 
 def test_mention_action_executor_shadow_mode_skips_write_side_effects(
@@ -682,9 +999,71 @@ def test_mention_action_executor_blocks_job_when_comment_fails(
         current_job=created,
         orchestrator=orchestrator,
     )
+    with session_factory() as verification_session:
+        transition_events = [
+            event
+            for event in verification_session.query(EventJournalModel).all()
+            if event.details.get('action') == 'transition_job'
+            and event.details.get('reason') == 'mention_response_failed'
+        ]
 
     assert len(fake_client.comment_calls) == 1
     assert updated.state == JobState.BLOCKED
+    assert len(transition_events) == 1
+    transition_details = transition_events[0].details.get('transition_details')
+    assert isinstance(transition_details, dict)
+    assert transition_details.get('error_message') == 'comment failure'
+    assert transition_details.get('error_type') == 'RuntimeError'
+
+
+def test_mention_action_executor_blocks_reviewer_job_with_error_details(
+    session_factory: sessionmaker[Session],
+) -> None:
+    persistence_service = PersistenceService(session_factory=session_factory)
+    orchestrator = JobOrchestrator(persistence_service=persistence_service)
+    created = orchestrator.create_job(
+        _create_reviewer_record('Vaquum_Agent1#25:pr_reviewer'),
+        trace_id='trc_create',
+    )
+    fake_client = _FakeGitHubClient(
+        should_fail=True,
+        pull_request_files=_create_reviewer_pull_request_files(),
+    )
+    fake_codex = _FakeCodexExecutor(
+        last_message=_create_reviewer_inline_payload('Reviewer summary C'),
+    )
+    executor = MentionActionExecutor(
+        response_template='Ack {entity_key}',
+        clarification_template='Need clarification for {entity_key}',
+        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
+        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
+        github_client=fake_client,
+        codex_executor=fake_codex,
+    )
+
+    updated = executor.execute_for_event(
+        normalized_event=_create_normalized_event(
+            'pr_review_requested',
+            job_kind=JobKind.PR_REVIEWER,
+            job_id='Vaquum_Agent1#25:pr_reviewer',
+        ),
+        current_job=created,
+        orchestrator=orchestrator,
+    )
+    with session_factory() as verification_session:
+        transition_events = [
+            event
+            for event in verification_session.query(EventJournalModel).all()
+            if event.details.get('action') == 'transition_job'
+            and event.details.get('reason') == 'reviewer_response_failed'
+        ]
+
+    assert updated.state == JobState.BLOCKED
+    assert len(transition_events) == 1
+    transition_details = transition_events[0].details.get('transition_details')
+    assert isinstance(transition_details, dict)
+    assert transition_details.get('error_message') == 'comment failure'
+    assert transition_details.get('error_type') == 'RuntimeError'
 
 
 def test_mention_action_executor_routes_review_thread_reply(
@@ -811,7 +1190,9 @@ def test_mention_action_executor_executes_direct_assignment_with_sufficient_cont
     persistence_service = PersistenceService(session_factory=session_factory)
     orchestrator = JobOrchestrator(persistence_service=persistence_service)
     created = orchestrator.create_job(_create_record('Vaquum_Agent1#25:issue'), trace_id='trc_create')
-    fake_client = _FakeGitHubClient()
+    fake_client = _FakeGitHubClient(
+        issue_payload={'body': 'Respond "hello world" if you see this message.'},
+    )
     executor = MentionActionExecutor(
         response_template='Ack {entity_key}',
         clarification_template='Need clarification for {entity_key}',
@@ -832,8 +1213,8 @@ def test_mention_action_executor_executes_direct_assignment_with_sufficient_cont
     )
 
     assert len(fake_client.comment_calls) == 1
-    assert fake_client.comment_calls[0]['body'] == 'Ack Vaquum/Agent1#25'
-    assert updated.state == JobState.AWAITING_HUMAN_FEEDBACK
+    assert fake_client.comment_calls[0]['body'] == 'hello world'
+    assert updated.state == JobState.COMPLETED
 
 
 def test_mention_action_executor_rejects_stale_lease_mutating_write(

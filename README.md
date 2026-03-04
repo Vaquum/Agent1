@@ -20,7 +20,18 @@ Agent1 collapses issue and PR lifecycle handling, policy-governed execution, and
 
 # Quick Start
 
-Run backend and dashboard together from repository root with one Docker command.
+Run backend and dashboard together from repository root with one Docker command. The frontend now runs in Vite dev mode inside Docker, so UI changes hot-reload automatically without restarting containers. Once started, your frontend is exposed on:
+
+http://localhost:8080/ — main dashboard UI
+http://localhost:8080/<any-spa-path> — same app (nginx falls back to index.html)
+
+Frontend API proxy endpoint:
+http://localhost:8080/api/* — proxied to backend http://backend:8000/* (inside compose)
+
+Useful examples through the frontend:
+http://localhost:8080/api/health -> backend /health
+http://localhost:8080/api/docs -> backend /docs
+http://localhost:8080/api/openapi.json -> backend /openapi.json
 
 Environment resolution for Docker is explicit:
 
@@ -39,6 +50,7 @@ AGENT1_DOCKER_MODE=dev docker compose up --build
 - Backend API docs: `http://localhost:8000/docs`
 - Dashboard: `http://localhost:8080`
 - Dashboard-to-backend API proxy: `http://localhost:8080/api/*`
+- Frontend edit loop: save files under `apps/frontend/src` and refreshes apply automatically.
 - Runtime behavior: `dev` environment + `shadow` mode with isolated local SQLite persistence.
 
 2) `active` mode (production behavior)
