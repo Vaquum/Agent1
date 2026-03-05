@@ -23,6 +23,7 @@ from agent1.core.ingress_contracts import IngressEventType
 from agent1.core.ingress_contracts import IngressOrderingDecision
 from agent1.core.ingress_contracts import NormalizedIngressEvent
 from agent1.core.orchestrator import JobOrchestrator
+from agent1.core.services.dashboard_service import DashboardService
 from agent1.core.services.persistence_service import PersistenceService
 
 
@@ -123,6 +124,45 @@ def test_orchestrator_transition_with_outbox(session_factory: sessionmaker[Sessi
     assert transitioned.state == JobState.EXECUTING
     assert len(outbox_records) == 1
     assert outbox_records[0].status == OutboxStatus.PENDING
+
+
+def test_orchestrator_blocked_transition_includes_default_details(
+    session_factory: sessionmaker[Session],
+) -> None:
+    persistence_service = PersistenceService(session_factory=session_factory)
+    orchestrator = JobOrchestrator(persistence_service=persistence_service)
+    dashboard_service = DashboardService(session_factory=session_factory)
+    created = orchestrator.create_job(_create_record('job_orch_blocked_details'), trace_id='trc_orch_blocked')
+    ready = orchestrator.transition_job(
+        created.job_id,
+        to_state=JobState.READY_TO_EXECUTE,
+        reason='context_sufficient',
+        trace_id='trc_orch_blocked',
+    )
+    orchestrator.transition_job(
+        ready.job_id,
+        to_state=JobState.BLOCKED,
+        reason='reviewer_response_failed',
+        trace_id='trc_orch_blocked',
+    )
+    timeline = dashboard_service.get_job_timeline(
+        job_id=ready.job_id,
+        limit=20,
+        offset=0,
+    )
+
+    assert timeline is not None
+    blocked_transition_event = next(
+        event for event in timeline.events
+        if event.details.get('action') == 'transition_job'
+        and event.details.get('to_state') == JobState.BLOCKED.value
+    )
+    transition_details = blocked_transition_event.details.get('transition_details')
+    assert isinstance(transition_details, dict)
+    assert transition_details.get('error_type') == 'UnknownBlockedTransition'
+    assert transition_details.get('error_message') == (
+        'Blocked transition without explicit error details. reason=reviewer_response_failed'
+    )
 
 
 def test_orchestrator_persist_ingress_event_and_validate_mutating_lease(

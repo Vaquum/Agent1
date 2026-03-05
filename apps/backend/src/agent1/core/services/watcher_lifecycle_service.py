@@ -10,6 +10,7 @@ from pydantic import ConfigDict
 from pydantic import Field
 
 from agent1.core.contracts import EnvironmentName
+from agent1.core.contracts import JobKind
 from agent1.core.contracts import JobRecord
 from agent1.core.contracts import JobState
 from agent1.core.contracts import WatcherStatus
@@ -19,6 +20,7 @@ from agent1.core.watcher import WatcherState
 DEFAULT_WATCHER_STALE_AFTER_SECONDS = 120
 DEFAULT_WATCHER_MAX_RECLAIM_ATTEMPTS = 3
 DEFAULT_WATCH_DEADLINE_SECONDS = 3600
+DEFAULT_TERMINAL_STATES = frozenset({JobState.COMPLETED, JobState.BLOCKED})
 
 
 def _utc_now() -> datetime:
@@ -50,6 +52,7 @@ class WatcherLifecycleService:
         stale_after_seconds: int = DEFAULT_WATCHER_STALE_AFTER_SECONDS,
         max_reclaim_attempts: int = DEFAULT_WATCHER_MAX_RECLAIM_ATTEMPTS,
         watch_deadline_seconds: int = DEFAULT_WATCH_DEADLINE_SECONDS,
+        terminal_states_by_job_kind: dict[JobKind, set[JobState]] | None = None,
     ) -> None:
         self._environment = environment
         self._watch_interval_seconds = watch_interval_seconds
@@ -57,6 +60,23 @@ class WatcherLifecycleService:
         self._stale_after_seconds = stale_after_seconds
         self._max_reclaim_attempts = max_reclaim_attempts
         self._watch_deadline_seconds = watch_deadline_seconds
+        self._terminal_states_by_job_kind = (
+            terminal_states_by_job_kind
+            if terminal_states_by_job_kind is not None
+            else {
+                JobKind.ISSUE: set(DEFAULT_TERMINAL_STATES),
+                JobKind.PR_AUTHOR: set(DEFAULT_TERMINAL_STATES),
+                JobKind.PR_REVIEWER: set(DEFAULT_TERMINAL_STATES),
+                JobKind.REVIEW: set(DEFAULT_TERMINAL_STATES),
+                JobKind.CI: set(DEFAULT_TERMINAL_STATES),
+            }
+        )
+
+    def _is_terminal_state(self, job: JobRecord) -> bool:
+        terminal_states = self._terminal_states_by_job_kind.get(job.kind)
+        if terminal_states is None:
+            return False
+        return job.state in terminal_states
 
     def track_processed_jobs(
         self,
@@ -78,7 +98,7 @@ class WatcherLifecycleService:
         normalized_reference_time = _utc_now() if reference_time is None else reference_time
         updated_count = 0
         for job in processed_jobs:
-            if job.state == JobState.COMPLETED:
+            if self._is_terminal_state(job):
                 closed = self._persistence_service.close_watcher(
                     environment=self._environment,
                     job_id=job.job_id,

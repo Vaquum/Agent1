@@ -21,7 +21,13 @@ def create_runtime_ingress_coordinator(
     mention_response_template: str = '',
     clarification_template: str = '',
     reviewer_follow_up_template: str = '',
+    issue_mention_codex_prompt_template: str = '',
+    pr_mention_codex_prompt_template: str = '',
+    issue_assignment_codex_prompt_template: str = '',
+    reviewer_codex_review_prompt_template: str = '',
+    reviewer_codex_thread_reply_prompt_template: str = '',
     author_follow_up_template: str = '',
+    author_codex_prompt_template: str = '',
     require_review_thread_reply: bool = True,
     allow_top_level_pr_fallback: bool = False,
     idempotency_policy_version: str = 'unversioned',
@@ -39,7 +45,13 @@ def create_runtime_ingress_coordinator(
     mention_response_template (str): Mention response template for deterministic reply comments.
     clarification_template (str): Clarification request template for insufficient-context assignments.
     reviewer_follow_up_template (str): Reviewer follow-up template for PR reviewer workflows.
+    issue_mention_codex_prompt_template (str): Issue mention codex prompt template.
+    pr_mention_codex_prompt_template (str): PR mention codex prompt template.
+    issue_assignment_codex_prompt_template (str): Issue assignment codex prompt template.
+    reviewer_codex_review_prompt_template (str): Reviewer codex review prompt template for PR reviews.
+    reviewer_codex_thread_reply_prompt_template (str): Reviewer codex prompt template for thread replies.
     author_follow_up_template (str): Author follow-up template for PR author workflows.
+    author_codex_prompt_template (str): Author codex follow-up prompt template for remediation workflows.
     require_review_thread_reply (bool): Whether PR review-thread replies are mandatory for thread events.
     allow_top_level_pr_fallback (bool): Whether top-level PR fallback is allowed for review thread events.
     idempotency_policy_version (str): Policy version used for idempotency schema composition.
@@ -56,20 +68,23 @@ def create_runtime_ingress_coordinator(
     scanner = GitHubNotificationScanner(
         cursor_store=PersistenceIngressCursorStore(),
         cursor_key=GITHUB_NOTIFICATION_CURSOR_KEY,
+        environment=environment,
     )
-    mention_executor = (
-        MentionActionExecutor(
-            response_template=mention_response_template,
-            clarification_template=clarification_template,
-            reviewer_follow_up_template=reviewer_follow_up_template,
-            author_follow_up_template=author_follow_up_template,
-            require_review_thread_reply=require_review_thread_reply,
-            allow_top_level_pr_fallback=allow_top_level_pr_fallback,
-            idempotency_policy_version=idempotency_policy_version,
-            codex_executor=codex_executor,
-        )
-        if mention_response_template.strip() != ''
-        else None
+    mention_executor = MentionActionExecutor(
+        response_template=mention_response_template,
+        clarification_template=clarification_template,
+        reviewer_follow_up_template=reviewer_follow_up_template,
+        issue_mention_codex_prompt_template=issue_mention_codex_prompt_template,
+        pr_mention_codex_prompt_template=pr_mention_codex_prompt_template,
+        issue_assignment_codex_prompt_template=issue_assignment_codex_prompt_template,
+        reviewer_codex_review_prompt_template=reviewer_codex_review_prompt_template,
+        reviewer_codex_thread_reply_prompt_template=reviewer_codex_thread_reply_prompt_template,
+        author_follow_up_template=author_follow_up_template,
+        author_codex_prompt_template=author_codex_prompt_template,
+        require_review_thread_reply=require_review_thread_reply,
+        allow_top_level_pr_fallback=allow_top_level_pr_fallback,
+        idempotency_policy_version=idempotency_policy_version,
+        codex_executor=codex_executor,
     )
     return GitHubIngressCoordinator(
         scanner=scanner,
@@ -224,6 +239,28 @@ class GitHubIngressCoordinator:
         '''
 
         return self._scanner
+
+    def set_active_repositories(self, active_repositories: list[str]) -> None:
+
+        '''
+        Create runtime active-repository scope update for ingress normalization.
+
+        Args:
+        active_repositories (list[str]): Runtime active repository scope list.
+        '''
+
+        self._normalizer.set_active_repositories(active_repositories)
+
+    def get_active_repositories(self) -> list[str]:
+
+        '''
+        Create runtime active-repository scope list from ingress normalizer.
+
+        Returns:
+        list[str]: Current runtime active repository scope list.
+        '''
+
+        return self._normalizer.get_active_repositories()
 
 
 __all__ = [

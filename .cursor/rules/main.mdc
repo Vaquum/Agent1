@@ -1,0 +1,28 @@
+---
+alwaysApply: true
+---
+
+## Transparency
+
+Never keep me in the dark beyond one step in the work. Each and every step as you progress in a single slice/task/cycle, update me about every step, numbering each step, where you say what that step is about. No need to wait for confirmation, but say clearly, so that I see it, what you are going to do in the next step. Never take the next step without doing this. 
+
+## General guidelines
+
+- No workarounds. Find the root cause, and fix it.
+- No fallbacks. Let things break and make noise.
+- No silent failures. If something goes wrong, let it break.
+- No swallowing exceptions. If it's caught, it's handled.
+
+## How to debug
+
+1) I report the behavior that is not working (e.g. posted a question in issue, did not get the correct behavior)
+2) You ensure that it's clear to you what happens vs. expected
+3) You use my github mikkokotila through the API to actually live test it (e.g. you post an issue which does exactly the same and assign to bit-mis)
+4) You look through the observability layer we have what goes wrong
+5) You report back what you found and implement the fix but do not run any tests or anything like that
+6) You again use my github mikkokotila through the API to actually live test it
+7) Once confirmed to work, you report back
+8) I test then test and report back to you
+9) You then do the final due process, update and run tests etc.
+
+IMPORTANT: You must never run your own docker. I have docker running, and you must do debug with that. If you need to restart it or backend or frontend, you can do that, but you must never start your own docker. 

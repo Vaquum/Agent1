@@ -13,9 +13,33 @@
       "system_prompt": "You are Agent1.",
       "task_prompt": "I need more context to proceed on {entity_key}. Please share clear acceptance criteria, expected outcome, and any constraints."
     },
+    "issue_mention_codex": {
+      "system_prompt": "You are Agent1.",
+      "task_prompt": "Repository: {repository}\nEntity: {entity_key}\nIngressEvent: {ingress_event_type}\nIssueTitle: {issue_title}\nIssueState: {issue_state}\nHasSufficientContext: {has_sufficient_context}\nIssueAssignees: {issue_assignees}\nIssueLabels: {issue_labels}\nIssueBody:\n{issue_body}\nTask: Handle this issue interaction end-to-end.\n- If the request is clear, execute the requested work now and report concrete progress.\n- If details are missing, ask focused clarification questions that unblock execution.\n- If related follow-up artefacts are needed (for example a PR or a linked issue), create them and report what was created.\nOutput plain markdown only as the exact issue comment body. Do not output JSON."
+    },
+    "pr_mention_codex": {
+      "system_prompt": "You are Agent1.",
+      "task_prompt": "Repository: {repository}\nEntity: {entity_key}\nIngressEvent: {ingress_event_type}\nPRTitle: {pull_title}\nPRState: {pull_state}\nBaseRef: {pull_base_ref}\nHeadRef: {pull_head_ref}\nChangedFiles: {pull_changed_files}\nAdditions: {pull_additions}\nDeletions: {pull_deletions}\nCommits: {pull_commits}\nPRBody:\n{pull_body}\nTask: Handle this PR mention end-to-end.\n- Respond directly to the mention with useful, technically grounded progress.\n- If asked to implement changes, perform the implementation work and report concrete outcomes.\n- If the request is ambiguous, ask for the minimum clarification needed to proceed.\nOutput plain markdown only as the exact PR comment body. Do not output JSON."
+    },
+    "issue_assignment_codex": {
+      "system_prompt": "You are Agent1.",
+      "task_prompt": "Repository: {repository}\nEntity: {entity_key}\nIngressEvent: {ingress_event_type}\nIssueTitle: {issue_title}\nIssueState: {issue_state}\nHasSufficientContext: {has_sufficient_context}\nIssueAssignees: {issue_assignees}\nIssueLabels: {issue_labels}\nIssueBody:\n{issue_body}\nTask: Handle this issue assignment end-to-end.\n- If the issue is actionable, execute the work now and report progress or completion.\n- If context is insufficient, ask precise clarifications and state exactly what is missing.\n- Keep momentum and provide a comment that clearly advances the issue.\nOutput plain markdown only as the exact issue comment body. Do not output JSON."
+    },
     "reviewer_follow_up": {
       "system_prompt": "You are Agent1.",
       "task_prompt": "Reviewer follow-up for {entity_key}: I have reviewed the latest updates and posted the next review outcome."
+    },
+    "reviewer_codex_review": {
+      "system_prompt": "You are Agent1.",
+      "task_prompt": "Repository: {repository}\nEntity: {entity_key}\nIngressEvent: {ingress_event_type}\nPRTitle: {pull_title}\nPRState: {pull_state}\nBaseRef: {pull_base_ref}\nHeadRef: {pull_head_ref}\nChangedFiles: {pull_changed_files}\nAdditions: {pull_additions}\nDeletions: {pull_deletions}\nCommits: {pull_commits}\nPRBody: {pull_body}\nDiffFilesIncluded: {reviewer_diff_file_count}\nPullRequestDiffContext:\n{reviewer_diff_context}\nTask: Perform a concrete code review and return JSON only.\nUse the provided pull request diff context as source of truth.\nDo not run shell commands, filesystem reads, or network calls.\nDo not state that access is unavailable when DiffFilesIncluded is greater than zero.\nReference concrete file paths from PullRequestDiffContext in every comment.\nEvery comment must map to right-side diff lines only.\nOutput JSON object format exactly:\n{{\"summary\":\"<short review summary>\",\"comments\":[{{\"path\":\"<file path>\",\"line\":123,\"side\":\"RIGHT\",\"body\":\"<inline review comment>\"}}]}}\nIf there are no actionable findings, return comments as an empty list."
+    },
+    "reviewer_codex_thread_reply": {
+      "system_prompt": "You are Agent1.",
+      "task_prompt": "Repository: {repository}\nEntity: {entity_key}\nIngressEvent: {ingress_event_type}\nTask: Reply in the same PR review thread with a concise, technically grounded response.\nOutput plain markdown only. Do not output JSON for thread replies."
+    },
+    "author_codex_follow_up": {
+      "system_prompt": "You are Agent1.",
+      "task_prompt": "Repository: {repository}\nEntity: {entity_key}\nIngressEvent: {ingress_event_type}\nCheckName: {check_name}\nConclusion: {conclusion}\nTask: Apply deterministic PR author follow-up implementation changes."
     },
     "pr_follow_up": {
       "system_prompt": "You are Agent1.",

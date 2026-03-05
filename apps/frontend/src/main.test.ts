@@ -15,11 +15,20 @@ function createStateWithOverview(overview: DashboardOverviewResponse): Dashboard
       trace_id: '',
       status: ''
     },
+    active_view: 'snapshot',
     selected_job_id: null,
     timeline_offset: 0,
     selected_timeline_event_key: null,
+    transitions_collapsed: true,
+    events_collapsed: true,
+    anomalies_collapsed: true,
     overview,
     timeline: null,
+    active_repositories: [],
+    controls_is_loading: false,
+    controls_is_saving: false,
+    controls_error_message: null,
+    controls_feedback_message: null,
     is_loading: false,
     error_message: null
   }
@@ -36,16 +45,25 @@ describe('dashboard markup', () => {
         trace_id: '',
         status: ''
       },
+      active_view: 'snapshot',
       selected_job_id: null,
       timeline_offset: 0,
       selected_timeline_event_key: null,
+      transitions_collapsed: true,
+      events_collapsed: true,
+      anomalies_collapsed: true,
       overview: null,
       timeline: null,
+      active_repositories: [],
+      controls_is_loading: false,
+      controls_is_saving: false,
+      controls_error_message: null,
+      controls_feedback_message: null,
       is_loading: true,
       error_message: null
     })
 
-    expect(markup).toContain('Loading dashboard snapshot...')
+    expect(markup).toContain('Snapshot syncing...')
   })
 
   it('renders jobs transitions and events from overview payload', () => {
@@ -126,14 +144,13 @@ describe('dashboard markup', () => {
 
     const markup = createDashboardMarkup(createStateWithOverview(payload))
 
-    expect(markup).toContain('Agent1 Dashboard')
+    expect(markup).toContain('SNAPSHOT')
+    expect(markup).toContain('CONTROLS')
     expect(markup).toContain('job_1')
-    expect(markup).toContain('trc_1')
-    expect(markup).toContain('Live snapshot')
+    expect(markup).toContain('Snapshot ready')
     expect(markup).toContain('Filters')
-    expect(markup).toContain('Timeline')
+    expect(markup).toContain('toggle-job-timeline')
     expect(markup).toContain('Recent Anomalies')
-    expect(markup).toContain('hash_chain_gap_anomalies')
   })
 
   it('renders selected timeline event details and correlated transitions', () => {
@@ -219,7 +236,13 @@ describe('dashboard markup', () => {
           source: 'agent',
           event_type: 'state_transition',
           status: 'ok',
-          details: { reason: 'context_refresh' }
+          details: {
+            reason: 'context_refresh',
+            transition_details: {
+              error_type: 'RuntimeError',
+              error_message: 'comment failure'
+            }
+          }
         }
       ]
     }
@@ -232,20 +255,277 @@ describe('dashboard markup', () => {
         trace_id: '',
         status: ''
       },
+      active_view: 'snapshot',
       selected_job_id: 'job_2',
       timeline_offset: 0,
       selected_timeline_event_key: '2026-03-02T20:07:00Z|trc_2|state_transition|ok',
+      transitions_collapsed: true,
+      events_collapsed: true,
+      anomalies_collapsed: true,
       overview,
       timeline,
+      active_repositories: [],
+      controls_is_loading: false,
+      controls_is_saving: false,
+      controls_error_message: null,
+      controls_feedback_message: null,
       is_loading: false,
       error_message: null
     }
 
     const markup = createDashboardMarkup(state)
 
-    expect(markup).toContain('Selected Timeline Event')
+    expect(markup).toContain('Timeline Event Inspection')
     expect(markup).toContain('Correlated Transitions')
     expect(markup).toContain('context_refresh')
     expect(markup).toContain('Filter Overview by Trace')
+    expect(markup).toContain('RuntimeError - comment failure')
+  })
+
+  it('shows timeline error summary without manual event selection', () => {
+    const overview: DashboardOverviewResponse = {
+      filters: {
+        entity_key: null,
+        job_id: null,
+        trace_id: null,
+        status: null
+      },
+      jobs_page: {
+        limit: 20,
+        offset: 0,
+        total: 1
+      },
+      transitions_page: {
+        limit: 20,
+        offset: 0,
+        total: 1
+      },
+      events_page: {
+        limit: 20,
+        offset: 0,
+        total: 1
+      },
+      anomalies_page: {
+        limit: 20,
+        offset: 0,
+        total: 0
+      },
+      jobs: [
+        {
+          job_id: 'job_3',
+          entity_key: 'Vaquum/Agent1#3',
+          kind: 'issue',
+          state: 'blocked',
+          lease_epoch: 1,
+          environment: 'prod',
+          mode: 'active',
+          updated_at: '2026-03-02T20:10:00Z'
+        }
+      ],
+      transitions: [],
+      events: [],
+      anomalies: []
+    }
+    const timeline: DashboardJobTimelineResponse = {
+      job: {
+        job_id: 'job_3',
+        entity_key: 'Vaquum/Agent1#3',
+        kind: 'issue',
+        state: 'blocked',
+        lease_epoch: 1,
+        environment: 'prod',
+        mode: 'active',
+        updated_at: '2026-03-02T20:10:00Z'
+      },
+      transitions_page: {
+        limit: 20,
+        offset: 0,
+        total: 1
+      },
+      events_page: {
+        limit: 20,
+        offset: 0,
+        total: 1
+      },
+      transitions: [
+        {
+          job_id: 'job_3',
+          from_state: 'ready_to_execute',
+          to_state: 'blocked',
+          reason: 'mention_response_failed',
+          transition_at: '2026-03-02T20:11:00Z'
+        }
+      ],
+      events: [
+        {
+          timestamp: '2026-03-02T20:11:01Z',
+          trace_id: 'trc_3',
+          job_id: 'job_3',
+          entity_key: 'Vaquum/Agent1#3',
+          source: 'agent',
+          event_type: 'state_transition',
+          status: 'ok',
+          details: {
+            reason: 'mention_response_failed',
+            transition_details: {
+              error_type: 'GitHubPolicyError',
+              error_message: 'Mutating credential owner preflight mismatch'
+            }
+          }
+        }
+      ]
+    }
+    const state: DashboardRenderState = {
+      query: {
+        limit: 20,
+        offset: 0,
+        entity_key: '',
+        job_id: '',
+        trace_id: '',
+        status: ''
+      },
+      active_view: 'snapshot',
+      selected_job_id: 'job_3',
+      timeline_offset: 0,
+      selected_timeline_event_key: '2026-03-02T20:11:01Z|trc_3|state_transition|ok',
+      transitions_collapsed: true,
+      events_collapsed: true,
+      anomalies_collapsed: true,
+      overview,
+      timeline,
+      active_repositories: [],
+      controls_is_loading: false,
+      controls_is_saving: false,
+      controls_error_message: null,
+      controls_feedback_message: null,
+      is_loading: false,
+      error_message: null
+    }
+
+    const markup = createDashboardMarkup(state)
+
+    expect(markup).toContain('GitHubPolicyError - Mutating credential owner preflight mismatch')
+  })
+
+  it('shows blocked reason when timeline has no transition details', () => {
+    const overview: DashboardOverviewResponse = {
+      filters: {
+        entity_key: null,
+        job_id: null,
+        trace_id: null,
+        status: null
+      },
+      jobs_page: {
+        limit: 20,
+        offset: 0,
+        total: 1
+      },
+      transitions_page: {
+        limit: 20,
+        offset: 0,
+        total: 1
+      },
+      events_page: {
+        limit: 20,
+        offset: 0,
+        total: 1
+      },
+      anomalies_page: {
+        limit: 20,
+        offset: 0,
+        total: 0
+      },
+      jobs: [
+        {
+          job_id: 'job_4',
+          entity_key: 'Vaquum/Agent1#4',
+          kind: 'issue',
+          state: 'blocked',
+          lease_epoch: 1,
+          environment: 'prod',
+          mode: 'active',
+          updated_at: '2026-03-02T20:10:00Z'
+        }
+      ],
+      transitions: [],
+      events: [],
+      anomalies: []
+    }
+    const timeline: DashboardJobTimelineResponse = {
+      job: {
+        job_id: 'job_4',
+        entity_key: 'Vaquum/Agent1#4',
+        kind: 'issue',
+        state: 'blocked',
+        lease_epoch: 1,
+        environment: 'prod',
+        mode: 'active',
+        updated_at: '2026-03-02T20:10:00Z'
+      },
+      transitions_page: {
+        limit: 20,
+        offset: 0,
+        total: 1
+      },
+      events_page: {
+        limit: 20,
+        offset: 0,
+        total: 1
+      },
+      transitions: [
+        {
+          job_id: 'job_4',
+          from_state: 'ready_to_execute',
+          to_state: 'blocked',
+          reason: 'reviewer_response_failed',
+          transition_at: '2026-03-02T20:11:00Z'
+        }
+      ],
+      events: [
+        {
+          timestamp: '2026-03-02T20:11:01Z',
+          trace_id: 'trc_4',
+          job_id: 'job_4',
+          entity_key: 'Vaquum/Agent1#4',
+          source: 'agent',
+          event_type: 'state_transition',
+          status: 'ok',
+          details: {
+            action: 'transition_job',
+            reason: 'reviewer_response_failed'
+          }
+        }
+      ]
+    }
+    const state: DashboardRenderState = {
+      query: {
+        limit: 20,
+        offset: 0,
+        entity_key: '',
+        job_id: '',
+        trace_id: '',
+        status: ''
+      },
+      active_view: 'snapshot',
+      selected_job_id: 'job_4',
+      timeline_offset: 0,
+      selected_timeline_event_key: null,
+      transitions_collapsed: true,
+      events_collapsed: true,
+      anomalies_collapsed: true,
+      overview,
+      timeline,
+      active_repositories: [],
+      controls_is_loading: false,
+      controls_is_saving: false,
+      controls_error_message: null,
+      controls_feedback_message: null,
+      is_loading: false,
+      error_message: null
+    }
+
+    const markup = createDashboardMarkup(state)
+
+    expect(markup).toContain('reviewer_response_failed')
   })
 })

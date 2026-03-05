@@ -11,7 +11,7 @@
     "protected_files": [
       {
         "path": "policies/default.json",
-        "sha256": "8cada76b83240b32f22112d04348a45e42d28eef01d58a1ab5c84c8827f7e728"
+        "sha256": "265cd101178b31ed22915aed462419a53e64e719c4db40f26d01959c7de418a3"
       },
       {
         "path": "policies/permission-matrix.json",

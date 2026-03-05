@@ -121,11 +121,11 @@ test('covers event-detail inspection and trace-pivot filtering flow', async ({ p
   })
 
   await page.goto(dashboardUrl)
-  await page.getByTestId('select-job-timeline').first().click()
-  await expect(page.getByRole('heading', { name: 'Job Timeline: job_e2e_trace_1' })).toBeVisible()
+  await page.getByTestId('toggle-job-timeline').first().click()
+  await expect(page.getByText('Timeline events (1)')).toBeVisible()
 
-  await page.getByTestId('inspect-timeline-event').first().click()
-  await expect(page.getByRole('heading', { name: 'Selected Timeline Event' })).toBeVisible()
+  await page.getByTestId('toggle-timeline-event').first().click()
+  await expect(page.getByRole('heading', { name: 'Timeline Event Inspection' })).toBeVisible()
   await expect(page.getByText('"note": "focus_trace"')).toBeVisible()
 
   const tracePivotRequest = page.waitForRequest(
@@ -135,6 +135,7 @@ test('covers event-detail inspection and trace-pivot filtering flow', async ({ p
   await tracePivotRequest
 
   await expect(page.locator('#filter-trace-id')).toHaveValue('trc_focus')
+  await page.locator("button.section-toggle[data-section='events']").click()
   await expect(page.getByTestId('overview-trace-cell').first()).toHaveText('trc_focus')
   await expect(page.getByTestId('overview-trace-cell').filter({ hasText: 'trc_other' })).toHaveCount(0)
 })

@@ -1,0 +1,66 @@
+name: agent1
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: apps/backend/Dockerfile
+    environment:
+      AGENT1_DOCKER_MODE: ${AGENT1_DOCKER_MODE}
+      PORT: ${PORT:-8000}
+      DATABASE_URL: ${DATABASE_URL}
+      GITHUB_API_URL: ${GITHUB_API_URL}
+      GITHUB_USER: ${GITHUB_USER}
+      GITHUB_TOKEN: ${GITHUB_TOKEN}
+      GITHUB_HTTP_TIMEOUT_SECONDS: ${GITHUB_HTTP_TIMEOUT_SECONDS}
+      CODEX_CLI_COMMAND: ${CODEX_CLI_COMMAND}
+      CODEX_CLI_TIMEOUT_SECONDS: ${CODEX_CLI_TIMEOUT_SECONDS}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      RUNTIME_INSTANCE_ID: ${RUNTIME_INSTANCE_ID}
+      RUNTIME_ENVIRONMENT: ${RUNTIME_ENVIRONMENT}
+      RUNTIME_MODE_OVERRIDE: ${RUNTIME_MODE_OVERRIDE}
+      SENTRY_PYTHON_DSN: ${SENTRY_PYTHON_DSN}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT}
+      SENTRY_RELEASE: ${SENTRY_RELEASE}
+      SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE}
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME}
+      OTEL_TRACES_SAMPLER: ${OTEL_TRACES_SAMPLER}
+      OTEL_PROPAGATORS: ${OTEL_PROPAGATORS}
+    ports:
+      - '${PORT:-8000}:${PORT:-8000}'
+    volumes:
+      - agent1_data:/data
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          'import urllib.request; urllib.request.urlopen("http://localhost:${PORT:-8000}/health", timeout=5)',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+      target: dev
+    environment:
+      VITE_AGENT1_API_BASE_URL: /api
+      VITE_API_PROXY_TARGET: http://backend:${PORT:-8000}
+      CHOKIDAR_USEPOLLING: 'true'
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - '8080:8080'
+    volumes:
+      - ./apps/frontend:/app/apps/frontend
+      - frontend_node_modules:/app/apps/frontend/node_modules
+
+volumes:
+  agent1_data:
+  frontend_node_modules:

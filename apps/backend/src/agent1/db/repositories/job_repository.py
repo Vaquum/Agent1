@@ -8,6 +8,7 @@ from sqlalchemy import update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
+from agent1.core.contracts import JobKind
 from agent1.core.contracts import JobRecord
 from agent1.core.contracts import JobState
 from agent1.db.models import JobModel
@@ -237,6 +238,34 @@ class JobRepository:
             query = query.filter(JobTransitionModel.job_id == job_id.strip())
 
         return query.count()
+
+    def list_jobs_by_kind_and_states(
+        self,
+        kind: JobKind,
+        states: list[JobState],
+        limit: int,
+    ) -> list[JobModel]:
+
+        '''
+        Create filtered job list by job kind and lifecycle states.
+
+        Args:
+        kind (JobKind): Job kind filter.
+        states (list[JobState]): Allowed lifecycle states.
+        limit (int): Maximum rows to return.
+
+        Returns:
+        list[JobModel]: Ordered filtered job rows.
+        '''
+
+        return (
+            self._session.query(JobModel)
+            .filter(JobModel.kind == kind)
+            .filter(JobModel.state.in_(states))
+            .order_by(JobModel.updated_at.desc())
+            .limit(limit)
+            .all()
+        )
 
 
 __all__ = ['JobRepository']

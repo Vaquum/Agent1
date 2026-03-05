@@ -257,7 +257,7 @@ class PoliciesControl(BaseModel):
 
     version: str = Field(min_length=1)
     repo_scope: list[str] = Field(min_length=1)
-    agent_actor: str = Field(default='zero-bang', min_length=1)
+    agent_actor: str = Field(min_length=1)
     ignored_actors: list[str] = Field(default_factory=list)
     ignored_actor_suffixes: list[str] = Field(default_factory=lambda: ['[bot]'])
     deny_git_commands: list[str] = Field(default_factory=list)

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from functools import lru_cache
+
 from sqlalchemy import Engine
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -8,6 +10,7 @@ from sqlalchemy.orm import sessionmaker
 from agent1.config.settings import get_settings
 
 
+@lru_cache(maxsize=1)
 def create_db_engine() -> Engine:
 
     '''
@@ -18,9 +21,14 @@ def create_db_engine() -> Engine:
     '''
 
     settings = get_settings()
-    return create_engine(settings.database_url, future=True)
+    return create_engine(
+        settings.database_url,
+        future=True,
+        pool_pre_ping=True,
+    )
 
 
+@lru_cache(maxsize=1)
 def create_session_factory() -> sessionmaker[Session]:
 
     '''

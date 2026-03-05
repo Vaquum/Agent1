@@ -93,6 +93,7 @@ REQUIRED_RENDER_BLUEPRINT_SNIPPETS: tuple[str, ...] = (
     'preDeployCommand: cd /app/apps/backend && alembic upgrade head',
     'DATABASE_URL',
     'GITHUB_TOKEN',
+    'GITHUB_USER',
     'VITE_AGENT1_API_BASE_URL',
 )
 PLACEHOLDER_TOKENS: tuple[str, ...] = (

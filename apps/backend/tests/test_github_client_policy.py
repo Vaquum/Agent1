@@ -102,7 +102,7 @@ def _create_policies(
         {
             'version': '0.1.0',
             'repo_scope': ['Vaquum/Agent1'],
-            'agent_actor': 'zero-bang',
+            'agent_actor': 'runtime-agent-user',
             'ignored_actors': [],
             'ignored_actor_suffixes': ['[bot]'],
             'deny_git_commands': ['git push --force'],
@@ -118,9 +118,9 @@ def _create_policies(
             'default_deny_github_capabilities': True,
             'fail_closed_policy_resolution': fail_closed_policy_resolution,
             'mutating_credential_owner_by_environment': {
-                'dev': 'zero-bang',
-                'prod': 'zero-bang',
-                'ci': 'zero-bang',
+                'dev': 'runtime-agent-user',
+                'prod': 'runtime-agent-user',
+                'ci': 'runtime-agent-user',
             },
             'github_capabilities': capability_payload,
             'rules': [],
@@ -130,24 +130,17 @@ def _create_policies(
 
 def _create_settings(
     github_token: str = '',
-    github_read_token: str = '',
-    github_write_token: str = '',
 ) -> Settings:
     return Settings(
         github_api_url='https://api.github.com',
-        github_user='zero-bang',
+        github_user='runtime-agent-user',
         github_token=github_token,
-        github_read_token=github_read_token,
-        github_write_token=github_write_token,
     )
 
 
 def test_github_client_denies_mutation_when_capability_is_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     policies = _create_policies(capability_overrides={'write_issue_comment': False})
-    settings = _create_settings(
-        github_read_token='read-token',
-        github_write_token='write-token',
-    )
+    settings = _create_settings(github_token='shared-token')
 
     def _unexpected_urlopen(request: Request, timeout: int = 0) -> _FakeResponse:
         _ = request
@@ -169,9 +162,9 @@ def test_github_client_denies_mutation_when_capability_is_disabled(monkeypatch: 
         )
 
 
-def test_github_client_enforces_read_write_token_split(monkeypatch: pytest.MonkeyPatch) -> None:
-    policies = _create_policies(enforce_read_write_credential_split=True)
-    settings = _create_settings(github_token='shared-token')
+def test_github_client_requires_github_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    policies = _create_policies()
+    settings = _create_settings()
 
     def _unexpected_urlopen(request: Request, timeout: int = 0) -> _FakeResponse:
         _ = request
@@ -185,7 +178,7 @@ def test_github_client_enforces_read_write_token_split(monkeypatch: pytest.Monke
         environment=EnvironmentName.DEV,
     )
 
-    with pytest.raises(GitHubPolicyError):
+    with pytest.raises(GitHubPolicyError, match='Missing GITHUB_TOKEN'):
         client.fetch_notifications()
 
 
@@ -193,10 +186,7 @@ def test_github_client_rejects_mutation_when_owner_preflight_mismatches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     policies = _create_policies()
-    settings = _create_settings(
-        github_read_token='read-token',
-        github_write_token='write-token',
-    )
+    settings = _create_settings(github_token='shared-token')
     requested_urls: list[str] = []
 
     def _urlopen(request: Request, timeout: int = 0) -> _FakeResponse:
@@ -224,14 +214,11 @@ def test_github_client_rejects_mutation_when_owner_preflight_mismatches(
     assert requested_urls == ['https://api.github.com/user']
 
 
-def test_github_client_uses_read_and_write_tokens_for_respective_paths(
+def test_github_client_uses_shared_token_for_read_and_write_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     policies = _create_policies()
-    settings = _create_settings(
-        github_read_token='read-token',
-        github_write_token='write-token',
-    )
+    settings = _create_settings(github_token='shared-token')
     request_headers: list[tuple[str, str]] = []
 
     def _urlopen(request: Request, timeout: int = 0) -> _FakeResponse:
@@ -241,7 +228,7 @@ def test_github_client_uses_read_and_write_tokens_for_respective_paths(
         if request.full_url.endswith('/notifications?all=true&participating=false&per_page=100&page=1'):
             return _FakeResponse([])
         if request.full_url.endswith('/user'):
-            return _FakeResponse({'login': 'zero-bang'})
+            return _FakeResponse({'login': 'runtime-agent-user'})
         if request.full_url.endswith('/repos/Vaquum/Agent1/issues/3/comments'):
             return _FakeResponse({'id': 123})
 
@@ -261,20 +248,56 @@ def test_github_client_uses_read_and_write_tokens_for_respective_paths(
         body='token routing',
     )
 
-    assert request_headers[0][1] == 'Bearer read-token'
+    assert request_headers[0][1] == 'Bearer shared-token'
     assert request_headers[1][0].endswith('/user')
-    assert request_headers[1][1] == 'Bearer write-token'
+    assert request_headers[1][1] == 'Bearer shared-token'
     assert request_headers[2][0].endswith('/repos/Vaquum/Agent1/issues/3/comments')
-    assert request_headers[2][1] == 'Bearer write-token'
+    assert request_headers[2][1] == 'Bearer shared-token'
+
+
+def test_github_client_submits_pull_request_review_with_shared_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    policies = _create_policies()
+    settings = _create_settings(github_token='shared-token')
+    request_headers: list[tuple[str, str]] = []
+
+    def _urlopen(request: Request, timeout: int = 0) -> _FakeResponse:
+        _ = timeout
+        authorization = request.get_header('Authorization') or ''
+        request_headers.append((request.full_url, authorization))
+        if request.full_url.endswith('/user'):
+            return _FakeResponse({'login': 'runtime-agent-user'})
+        if request.full_url.endswith('/repos/Vaquum/Agent1/pulls/4/reviews'):
+            return _FakeResponse({'id': 222, 'state': 'CHANGES_REQUESTED'})
+
+        return _FakeResponse({})
+
+    monkeypatch.setattr(github_client_module, 'urlopen', _urlopen)
+    client = UrlLibGitHubApiClient(
+        settings=settings,
+        policies=policies,
+        environment=EnvironmentName.DEV,
+    )
+
+    payload = client.submit_pull_request_review(
+        repository='Vaquum/Agent1',
+        pull_number=4,
+        body='requesting changes',
+        event='REQUEST_CHANGES',
+    )
+
+    assert payload.get('id') == 222
+    assert request_headers[0][0].endswith('/user')
+    assert request_headers[0][1] == 'Bearer shared-token'
+    assert request_headers[1][0].endswith('/repos/Vaquum/Agent1/pulls/4/reviews')
+    assert request_headers[1][1] == 'Bearer shared-token'
 
 
 def test_github_client_fails_closed_when_policy_resolution_is_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    settings = _create_settings(
-        github_read_token='read-token',
-        github_write_token='write-token',
-    )
+    settings = _create_settings(github_token='shared-token')
 
     def _raise_control_error() -> object:
         raise ControlValidationError('policy load failed')

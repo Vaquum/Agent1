@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shlex
 import subprocess
+import tempfile
 import threading
 import time
 from datetime import datetime
@@ -57,11 +58,26 @@ class SubprocessCodexCliAdapter:
         settings: Settings | None = None,
     ) -> None:
         runtime_settings = settings or get_settings()
-        self._base_command = base_command or shlex.split(runtime_settings.codex_cli_command)
+        resolved_base_command = base_command or shlex.split(runtime_settings.codex_cli_command)
+        self._base_command = self._normalize_base_command(resolved_base_command)
         self._default_timeout_seconds = default_timeout_seconds or runtime_settings.codex_cli_timeout_seconds
         self._active_processes: dict[str, subprocess.Popen[str]] = {}
         self._cancelled_tasks: set[str] = set()
         self._lock = threading.Lock()
+        self._codex_login_verified = False
+        self._codex_login_lock = threading.Lock()
+
+    def _normalize_base_command(self, base_command: list[str]) -> list[str]:
+        if len(base_command) == 0:
+            return base_command
+        if base_command[0] != 'codex':
+            return base_command
+        if len(base_command) == 1:
+            return ['codex', 'exec', '--skip-git-repo-check']
+        if base_command[1].startswith('-'):
+            return ['codex', 'exec', '--skip-git-repo-check', *base_command[1:]]
+
+        return base_command
 
     def _emit_event(
         self,
@@ -95,6 +111,36 @@ class SubprocessCodexCliAdapter:
 
     def _build_command(self, task_input: CodexTaskInput) -> list[str]:
         return [*self._base_command, *task_input.arguments]
+
+    def _ensure_codex_authenticated(self) -> None:
+        if len(self._base_command) == 0 or self._base_command[0] != 'codex':
+            return
+        if self._codex_login_verified:
+            return
+
+        openai_api_key = os.getenv('OPENAI_API_KEY', '').strip()
+        if openai_api_key == '':
+            return
+
+        with self._codex_login_lock:
+            if self._codex_login_verified:
+                return
+
+            login_process = subprocess.run(
+                ['codex', 'login', '--with-api-key'],
+                input=f'{openai_api_key}\n',
+                text=True,
+                capture_output=True,
+                env=os.environ.copy(),
+                check=False,
+            )
+            if login_process.returncode != 0:
+                login_stderr = login_process.stderr.strip()
+                if login_stderr == '':
+                    login_stderr = 'codex login failed without stderr output'
+                raise RuntimeError(login_stderr)
+
+            self._codex_login_verified = True
 
     def _terminate_process(self, process: subprocess.Popen[str]) -> None:
         if process.poll() is not None:
@@ -159,8 +205,18 @@ class SubprocessCodexCliAdapter:
         ExecutionResult: Parsed execution result contract.
         '''
 
+        self._ensure_codex_authenticated()
         timeout_seconds = task_input.timeout_seconds or self._default_timeout_seconds
         command = self._build_command(task_input)
+        output_last_message_path: str | None = None
+        if '--output-last-message' not in command and '-o' not in command:
+            with tempfile.NamedTemporaryFile(
+                prefix='agent1-codex-last-message-',
+                suffix='.txt',
+                delete=False,
+            ) as output_file_handle:
+                output_last_message_path = output_file_handle.name
+            command = [*command, '--output-last-message', output_last_message_path]
         shell_command = shlex.join(command)
         deadline = time.monotonic() + timeout_seconds
         started_at = time.monotonic()
@@ -266,6 +322,16 @@ class SubprocessCodexCliAdapter:
 
         exit_code = process.poll()
         duration_seconds = round(time.monotonic() - started_at, 3)
+        last_message = ''
+        if output_last_message_path is not None:
+            try:
+                with open(output_last_message_path, encoding='utf-8') as output_file_handle:
+                    last_message = output_file_handle.read().strip()
+            finally:
+                try:
+                    os.remove(output_last_message_path)
+                except OSError:
+                    pass
         if cancelled:
             status = ExecutionStatus.BLOCKED
             summary = 'Codex command cancelled by runtime request.'
@@ -300,6 +366,7 @@ class SubprocessCodexCliAdapter:
             metadata={
                 'stdout': output_lines,
                 'stderr': error_lines,
+                'last_message': last_message,
                 'duration_seconds': duration_seconds,
                 'timed_out': timed_out,
                 'cancelled': cancelled,

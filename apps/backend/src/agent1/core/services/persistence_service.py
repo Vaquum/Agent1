@@ -15,6 +15,7 @@ from agent1.core.contracts import EntityRecord
 from agent1.core.contracts import EntityType
 from agent1.core.contracts import EnvironmentName
 from agent1.core.contracts import EventSource
+from agent1.core.contracts import JobKind
 from agent1.core.contracts import JobRecord
 from agent1.core.contracts import JobState
 from agent1.core.contracts import OutboxActionType
@@ -770,6 +771,34 @@ class PersistenceService:
                 return None
 
             return _to_job_record(model)
+
+    def list_jobs_by_kind_and_states(
+        self,
+        kind: JobKind,
+        states: list[JobState],
+        limit: int,
+    ) -> list[JobRecord]:
+
+        '''
+        Create typed job list filtered by job kind and lifecycle states.
+
+        Args:
+        kind (JobKind): Job kind filter.
+        states (list[JobState]): Allowed lifecycle states.
+        limit (int): Maximum rows to return.
+
+        Returns:
+        list[JobRecord]: Ordered typed job rows.
+        '''
+
+        with self._session_factory() as session:
+            repository = JobRepository(session)
+            models = repository.list_jobs_by_kind_and_states(
+                kind=kind,
+                states=states,
+                limit=limit,
+            )
+            return [_to_job_record(model) for model in models]
 
     def validate_job_lease_epoch(self, job_id: str, expected_lease_epoch: int) -> bool:
 

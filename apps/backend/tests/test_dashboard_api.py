@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from datetime import timezone
+from pathlib import Path
 from typing import Any
 from typing import cast
 
@@ -9,12 +10,15 @@ from fastapi import FastAPI
 from fastapi import HTTPException
 import pytest
 
+from agent1.api.dashboard import get_dashboard_active_repositories
 from agent1.api.dashboard import get_dashboard_job_timeline
 from agent1.api.dashboard import get_dashboard_overview
+from agent1.api.dashboard import update_dashboard_active_repositories
 from agent1.api.dashboard import acknowledge_stop_the_line_alert
 from agent1.api.dashboard import get_alert_signal_service
 from agent1.api.dashboard import get_dashboard_service
 from agent1.api.dashboard import router
+from agent1.api.dashboard_contracts import DashboardActiveRepositoriesUpdateRequest
 from agent1.api.dashboard_contracts import DashboardActionAttemptSummary
 from agent1.api.dashboard_contracts import DashboardAnomalySummary
 from agent1.api.dashboard_contracts import DashboardEventSummary
@@ -34,6 +38,7 @@ from agent1.core.contracts import JobState
 from agent1.core.contracts import ActionAttemptStatus
 from agent1.core.contracts import OutboxActionType
 from agent1.core.contracts import RuntimeMode
+from agent1.core.services.runtime_controls_service import RuntimeControlsService
 
 
 class _FakeDashboardService:
@@ -210,6 +215,59 @@ class _FakeAlertSignalService:
         return datetime.now(timezone.utc)
 
 
+class _FakeIngressCoordinator:
+    def __init__(self) -> None:
+        self.received_active_repositories: list[str] = []
+
+    def set_active_repositories(self, active_repositories: list[str]) -> None:
+        self.received_active_repositories = list(active_repositories)
+
+
+class _FakeRuntimeControl:
+    def __init__(self) -> None:
+        self.active_repositories: list[str] = []
+
+
+class _FakeControlBundle:
+    def __init__(self) -> None:
+        self.runtime = _FakeRuntimeControl()
+
+
+class _FakeState:
+    def __init__(
+        self,
+        runtime_controls_service: RuntimeControlsService,
+        ingress_coordinator: _FakeIngressCoordinator,
+    ) -> None:
+        self.runtime_controls_service = runtime_controls_service
+        self.ingress_coordinator = ingress_coordinator
+        self.control_bundle = _FakeControlBundle()
+
+
+class _FakeApp:
+    def __init__(
+        self,
+        runtime_controls_service: RuntimeControlsService,
+        ingress_coordinator: _FakeIngressCoordinator,
+    ) -> None:
+        self.state = _FakeState(
+            runtime_controls_service=runtime_controls_service,
+            ingress_coordinator=ingress_coordinator,
+        )
+
+
+class _FakeRequest:
+    def __init__(
+        self,
+        runtime_controls_service: RuntimeControlsService,
+        ingress_coordinator: _FakeIngressCoordinator,
+    ) -> None:
+        self.app = _FakeApp(
+            runtime_controls_service=runtime_controls_service,
+            ingress_coordinator=ingress_coordinator,
+        )
+
+
 def test_dashboard_router_exposes_overview_path() -> None:
     application = FastAPI()
     application.include_router(router)
@@ -220,6 +278,7 @@ def test_dashboard_router_exposes_overview_path() -> None:
     }
 
     assert '/dashboard/overview' in route_paths
+    assert '/dashboard/controls/active-repositories' in route_paths
     assert '/dashboard/jobs/{job_id}/timeline' in route_paths
     assert '/dashboard/alerts/stop-the-line/acknowledge' in route_paths
 
@@ -318,3 +377,51 @@ def test_get_alert_signal_service_returns_runtime_service() -> None:
     service = get_alert_signal_service()
 
     assert service.__class__.__name__ == 'AlertSignalService'
+
+
+def test_get_dashboard_active_repositories_returns_runtime_control_values(
+    tmp_path: Path,
+) -> None:
+    runtime_controls_service = RuntimeControlsService(
+        default_active_repositories=['Vaquum/Agent1'],
+        state_path=tmp_path / 'runtime-controls-state.json',
+    )
+    request = cast(
+        Any,
+        _FakeRequest(
+            runtime_controls_service=runtime_controls_service,
+            ingress_coordinator=_FakeIngressCoordinator(),
+        ),
+    )
+
+    response = get_dashboard_active_repositories(request=request)
+
+    assert response.active_repositories == ['Vaquum/Agent1']
+
+
+def test_update_dashboard_active_repositories_persists_and_updates_ingress_scope(
+    tmp_path: Path,
+) -> None:
+    runtime_controls_service = RuntimeControlsService(
+        default_active_repositories=['Vaquum/Agent1'],
+        state_path=tmp_path / 'runtime-controls-state.json',
+    )
+    ingress_coordinator = _FakeIngressCoordinator()
+    request = cast(
+        Any,
+        _FakeRequest(
+            runtime_controls_service=runtime_controls_service,
+            ingress_coordinator=ingress_coordinator,
+        ),
+    )
+
+    response = update_dashboard_active_repositories(
+        update_request=DashboardActiveRepositoriesUpdateRequest(
+            active_repositories=['Vaquum/Agent1', 'Vaquum/Confab'],
+        ),
+        request=request,
+    )
+
+    assert response.active_repositories == ['Vaquum/Agent1', 'Vaquum/Confab']
+    assert ingress_coordinator.received_active_repositories == ['Vaquum/Agent1', 'Vaquum/Confab']
+    assert runtime_controls_service.get_active_repositories() == ['Vaquum/Agent1', 'Vaquum/Confab']

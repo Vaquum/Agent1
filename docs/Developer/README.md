@@ -140,7 +140,7 @@ This directory contains developer-facing documentation for architecture, workflo
   - event-journal append operations compute chain values transactionally and reject missing-chain drift by rebuilding legacy rows before append,
   - event-journal chain integrity is continuously verifiable through deterministic hash recomputation from persisted event payload fields,
   - mutating GitHub calls perform credential-owner preflight binding against environment policy (`dev`/`prod`/`ci`),
-  - read-only scanner operations and mutating operations use separate credentials when split enforcement is enabled,
+  - read-only scanner operations and mutating operations use shared `GITHUB_TOKEN` credentials,
   - allowed git mutation command allowlist is defined in policy controls for codex-runtime enforcement,
   - allowed branch mutation namespace patterns are defined per environment in policy controls,
   - codex runtime execution blocks explicit git mutation commands that are denied or outside allowlist policy,
@@ -189,11 +189,8 @@ This directory contains developer-facing documentation for architecture, workflo
   - `apps/backend/src/agent1/core/services/sentry_runtime.py`
   - `apps/backend/src/agent1/config/settings.py`
   - `apps/backend/src/agent1/main.py` (`application.state.sentry_enabled`)
-- Sentry configuration environment keys:
-  - `SENTRY_PYTHON_DSN`
-  - `SENTRY_ENVIRONMENT`
-  - `SENTRY_RELEASE`
-  - `SENTRY_TRACES_SAMPLE_RATE`
+- Environment-variable reference for Sentry and all other runtime variables is documented in:
+  - `docs/Developer/Environment-Variables.md`
 - Structured observability baseline is defined under:
   - `apps/backend/src/agent1/core/services/trace_context.py`
   - `apps/backend/src/agent1/core/services/structured_event_logger.py`
@@ -208,10 +205,6 @@ This directory contains developer-facing documentation for architecture, workflo
   - `apps/backend/src/agent1/core/services/codex_executor.py` (manual span around task execution)
   - `apps/backend/src/agent1/core/ingress_coordinator.py` (manual span around processing cycle)
   - `apps/backend/src/agent1/main.py` (`application.state.otel_enabled`)
-- OpenTelemetry configuration environment keys:
-  - `OTEL_SERVICE_NAME`
-  - `OTEL_TRACES_SAMPLER`
-  - `OTEL_PROPAGATORS`
 - OpenTelemetry behavior:
   - FastAPI runtime is instrumented with OpenTelemetry middleware,
   - spans flow through Sentry via `SentrySpanProcessor` when `SENTRY_PYTHON_DSN` is configured.
@@ -279,6 +272,7 @@ This directory contains developer-facing documentation for architecture, workflo
   - `.dockerignore` (container build context policy)
   - `render.yaml` (Render service blueprint and release automation wiring)
   - `docs/Developer/deployment-environment-contract.md` (required deployment environment variables)
+  - `docs/Developer/Environment-Variables.md` (authoritative variable definitions and configuration guidance)
 - Release-promotion operations execution now appends one persisted `audit_runs` snapshot per gate run with decision evidence payload.
 - Frontend operations dashboard baseline is defined under:
   - `apps/frontend/src/main.ts`

@@ -17,4 +17,6 @@ Dashboard API configuration:
 
 ## Container runtime
 
-- Build image from repository root: `docker build -f apps/frontend/Dockerfile .`
+- Docker Compose frontend runs from the Dockerfile `dev` target (Vite + HMR), so file updates under `apps/frontend` apply automatically.
+- Build production image from repository root with static nginx output:
+  `docker build -f apps/frontend/Dockerfile --target production .`

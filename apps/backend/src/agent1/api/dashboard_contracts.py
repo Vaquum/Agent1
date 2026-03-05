@@ -98,6 +98,18 @@ class DashboardOverviewFilters(BaseModel):
     status: EventStatus | None = None
 
 
+class DashboardActiveRepositoriesResponse(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    active_repositories: list[str] = Field(min_length=1)
+
+
+class DashboardActiveRepositoriesUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
+    active_repositories: list[str] = Field(min_length=1)
+
+
 class DashboardOverviewResponse(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
@@ -143,6 +155,8 @@ class StopTheLineAcknowledgeResponse(BaseModel):
 
 
 __all__ = [
+    'DashboardActiveRepositoriesResponse',
+    'DashboardActiveRepositoriesUpdateRequest',
     'DashboardActionAttemptSummary',
     'DashboardAnomalySummary',
     'DashboardEventSummary',

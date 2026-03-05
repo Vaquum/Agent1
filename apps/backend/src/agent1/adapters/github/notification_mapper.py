@@ -50,7 +50,7 @@ def _map_event_type(reason: str, entity_type: IngressEntityType) -> IngressEvent
     if reason == 'assign' and entity_type == IngressEntityType.ISSUE:
         return IngressEventType.ISSUE_ASSIGNMENT
 
-    if reason == 'comment' and entity_type == IngressEntityType.ISSUE:
+    if reason in {'comment', 'state_change'} and entity_type == IngressEntityType.ISSUE:
         return IngressEventType.ISSUE_UPDATED
 
     if reason == 'review_requested' and entity_type == IngressEntityType.PR:
