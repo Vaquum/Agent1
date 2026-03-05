@@ -6,6 +6,8 @@ from fastapi import HTTPException
 from fastapi import Path
 from fastapi import Query
 from fastapi import Request
+from typing import cast
+from typing import Protocol
 
 from agent1.api.dashboard_contracts import DashboardActiveRepositoriesResponse
 from agent1.api.dashboard_contracts import DashboardActiveRepositoriesUpdateRequest
@@ -20,6 +22,11 @@ from agent1.core.services.dashboard_service import DashboardService
 from agent1.core.services.runtime_controls_service import RuntimeControlsService
 
 router = APIRouter()
+
+
+class IngressCoordinator(Protocol):
+    def set_active_repositories(self, active_repositories: list[str]) -> None:
+        ...
 
 
 def get_dashboard_service() -> DashboardService:
@@ -54,12 +61,12 @@ def _get_runtime_controls_service(request: Request) -> RuntimeControlsService:
     return runtime_controls_service
 
 
-def _get_ingress_coordinator(request: Request) -> object:
+def _get_ingress_coordinator(request: Request) -> IngressCoordinator:
     ingress_coordinator = getattr(request.app.state, 'ingress_coordinator', None)
     if ingress_coordinator is None or not hasattr(ingress_coordinator, 'set_active_repositories'):
         raise HTTPException(status_code=500, detail='Ingress coordinator is unavailable.')
 
-    return ingress_coordinator
+    return cast(IngressCoordinator, ingress_coordinator)
 
 
 @router.get('/dashboard/overview', response_model=DashboardOverviewResponse)

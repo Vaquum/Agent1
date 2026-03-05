@@ -120,8 +120,9 @@ If moving Agent1 identity to `bit-mis`:
   - Docker entrypoint sets safe defaults per `AGENT1_DOCKER_MODE`.
 - `AGENT1_DOCKER_MODE`:
   - Docker preset mode selector.
-  - `dev`: safe local mode (`dev` + `shadow` + local SQLite).
   - `active`: production-like mode (`prod` + `active`).
+  - `dev`: currently unsupported and blocked by entrypoint safeguards.
+  - `dev` will be re-enabled after dedicated dev credential identity and additional runtime isolation controls are added.
 - `PORT`:
   - Backend bind port.
   - Default: `8000`.

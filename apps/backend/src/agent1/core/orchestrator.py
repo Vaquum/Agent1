@@ -596,14 +596,14 @@ class JobOrchestrator:
         try:
             require_transition(current_job.state, to_state)
         except ValueError:
-            event_details = {
+            blocked_event_details: dict[str, object] = {
                 'action': 'transition_job',
                 'from_state': current_job.state.value,
                 'to_state': to_state.value,
                 'reason': reason,
             }
             if len(event_transition_details) != 0:
-                event_details['transition_details'] = event_transition_details
+                blocked_event_details['transition_details'] = event_transition_details
             self._persistence_service.append_event(
                 AgentEvent(
                     timestamp=_utc_now(),
@@ -614,20 +614,20 @@ class JobOrchestrator:
                     source=EventSource.POLICY,
                     event_type=EventType.STATE_TRANSITION,
                     status=EventStatus.BLOCKED,
-                    details=event_details,
+                    details=blocked_event_details,
                 )
             )
             raise
 
         updated_job = self._persistence_service.transition_job_state(job_id, to_state, reason)
-        event_details = {
+        success_event_details: dict[str, object] = {
             'action': 'transition_job',
             'from_state': current_job.state.value,
             'to_state': updated_job.state.value,
             'reason': reason,
         }
         if len(event_transition_details) != 0:
-            event_details['transition_details'] = event_transition_details
+            success_event_details['transition_details'] = event_transition_details
         self._persistence_service.append_event(
             AgentEvent(
                 timestamp=_utc_now(),
@@ -638,7 +638,7 @@ class JobOrchestrator:
                 source=EventSource.AGENT,
                 event_type=EventType.STATE_TRANSITION,
                 status=EventStatus.OK,
-                details=event_details,
+                details=success_event_details,
             )
         )
         return updated_job
@@ -681,14 +681,14 @@ class JobOrchestrator:
         try:
             require_transition(current_job.state, to_state)
         except ValueError:
-            event_details = {
+            blocked_event_details: dict[str, object] = {
                 'action': 'transition_job_with_outbox',
                 'from_state': current_job.state.value,
                 'to_state': to_state.value,
                 'reason': reason,
             }
             if len(event_transition_details) != 0:
-                event_details['transition_details'] = event_transition_details
+                blocked_event_details['transition_details'] = event_transition_details
             self._persistence_service.append_event(
                 AgentEvent(
                     timestamp=_utc_now(),
@@ -699,7 +699,7 @@ class JobOrchestrator:
                     source=EventSource.POLICY,
                     event_type=EventType.STATE_TRANSITION,
                     status=EventStatus.BLOCKED,
-                    details=event_details,
+                    details=blocked_event_details,
                 )
             )
             raise
@@ -710,7 +710,7 @@ class JobOrchestrator:
             reason,
             outbox_requests,
         )
-        event_details = {
+        success_event_details: dict[str, object] = {
             'action': 'transition_job_with_outbox',
             'from_state': current_job.state.value,
             'to_state': updated_job.state.value,
@@ -718,7 +718,7 @@ class JobOrchestrator:
             'outbox_count': len(outbox_records),
         }
         if len(event_transition_details) != 0:
-            event_details['transition_details'] = event_transition_details
+            success_event_details['transition_details'] = event_transition_details
         self._persistence_service.append_event(
             AgentEvent(
                 timestamp=_utc_now(),
@@ -729,7 +729,7 @@ class JobOrchestrator:
                 source=EventSource.AGENT,
                 event_type=EventType.STATE_TRANSITION,
                 status=EventStatus.OK,
-                details=event_details,
+                details=success_event_details,
             )
         )
         return updated_job, outbox_records

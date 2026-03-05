@@ -209,23 +209,15 @@ class GitHubNotificationScanner:
             if notification_event.entity_type != IngressEntityType.PR:
                 continue
 
-            timeline_payloads: list[dict[str, object]] = []
-            try:
-                timeline_payloads = self._github_client.fetch_pull_request_timeline(
-                    repository=notification_event.repository,
-                    pull_number=notification_event.entity_number,
-                )
-            except Exception:
-                timeline_payloads = []
+            timeline_payloads = self._github_client.fetch_pull_request_timeline(
+                repository=notification_event.repository,
+                pull_number=notification_event.entity_number,
+            )
 
-            check_run_payloads: list[dict[str, object]] = []
-            try:
-                check_run_payloads = self._github_client.fetch_pull_request_check_runs(
-                    repository=notification_event.repository,
-                    pull_number=notification_event.entity_number,
-                )
-            except Exception:
-                check_run_payloads = []
+            check_run_payloads = self._github_client.fetch_pull_request_check_runs(
+                repository=notification_event.repository,
+                pull_number=notification_event.entity_number,
+            )
 
             mapped_timeline_events = self._timeline_mapper.map_timeline_events(
                 repository=notification_event.repository,
@@ -244,14 +236,10 @@ class GitHubNotificationScanner:
                 check_run_payloads=check_run_payloads,
                 event_seed=notification_event.event_id,
             )
-            review_comment_payloads: list[dict[str, object]] = []
-            try:
-                review_comment_payloads = self._github_client.fetch_pull_request_review_comments(
-                    repository=notification_event.repository,
-                    pull_number=notification_event.entity_number,
-                )
-            except Exception:
-                review_comment_payloads = []
+            review_comment_payloads = self._github_client.fetch_pull_request_review_comments(
+                repository=notification_event.repository,
+                pull_number=notification_event.entity_number,
+            )
             mapped_review_comment_events = self._map_review_comment_enrichment_events(
                 repository=notification_event.repository,
                 pull_number=notification_event.entity_number,

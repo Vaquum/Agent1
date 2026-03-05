@@ -23,40 +23,11 @@ if [ "${RUNTIME_INSTANCE_ID:-}" = '' ]; then
   unset RUNTIME_INSTANCE_ID
 fi
 
-migration_attempt=0
-max_migration_attempts=20
-while :; do
-  migration_output=''
-  if migration_output="$(alembic upgrade head 2>&1)"; then
-    printf '%s\n' "$migration_output"
-    break
-  fi
-
-  printf '%s\n' "$migration_output"
-  case "$migration_output" in
-    *"already exists"*)
-      migration_attempt=$((migration_attempt + 1))
-      if [ "$migration_attempt" -gt "$max_migration_attempts" ]; then
-        echo "Exceeded migration repair attempts (${max_migration_attempts})." >&2
-        exit 1
-      fi
-      target_revision="$(
-        printf '%s\n' "$migration_output" \
-        | awk '/Running upgrade/ {print $NF}' \
-        | tail -n 1
-      )"
-      if [ "$target_revision" = '' ]; then
-        echo 'Could not determine failing Alembic revision for repair.' >&2
-        exit 1
-      fi
-      echo "Detected duplicate-schema migration drift; stamping ${target_revision} and retrying."
-      alembic stamp "$target_revision"
-      ;;
-    *)
-      exit 1
-      ;;
-  esac
-done
+if ! alembic upgrade head; then
+  echo 'Alembic migration failed; backend startup is blocked (fail-closed).' >&2
+  echo 'Run a manual migration repair, then rerun the same docker compose startup command.' >&2
+  exit 1
+fi
 
 missing_event_chain_columns="$(
   python - <<'PY'

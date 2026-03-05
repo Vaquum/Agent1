@@ -20,13 +20,13 @@ Agent1 collapses issue and PR lifecycle handling, policy-governed execution, and
 
 # Quick Start
 
-Run backend and dashboard together from repository root with one Docker command. The frontend now runs in Vite dev mode inside Docker, so UI changes hot-reload automatically without restarting containers. Once started, your frontend is exposed on:
+Run backend and dashboard together from repository root with one Docker command. Once started, your frontend is exposed on:
 
 http://localhost:8080/ — main dashboard UI
 http://localhost:8080/<any-spa-path> — same app (nginx falls back to index.html)
 
 Frontend API proxy endpoint:
-http://localhost:8080/api/* — proxied to backend http://backend:8000/* (inside compose)
+http://localhost:8080/api/* — proxied to backend `http://backend:$PORT/*` inside compose (`PORT` default `8000`)
 
 Useful examples through the frontend:
 http://localhost:8080/api/health -> backend /health
@@ -39,31 +39,31 @@ Environment resolution for Docker is explicit:
 - Missing values fall back to `.env`.
 - A complete starter template is in `.env.example`.
 
-1) `dev` mode (safe local mode, even if a remote `active` instance is running)
-
-```bash
-AGENT1_DOCKER_MODE=dev docker compose up --build
-```
-
-- Backend API: `http://localhost:8000`
-- Backend health: `http://localhost:8000/health`
-- Backend API docs: `http://localhost:8000/docs`
-- Dashboard: `http://localhost:8080`
-- Dashboard-to-backend API proxy: `http://localhost:8080/api/*`
-- Frontend edit loop: save files under `apps/frontend/src` and refreshes apply automatically.
-- Runtime behavior: `dev` environment + `shadow` mode with isolated local SQLite persistence.
-
-2) `active` mode (production behavior)
+1) `active` mode (currently supported)
 
 ```bash
 AGENT1_DOCKER_MODE=active docker compose up --build
 ```
 
+- Backend API: `http://localhost:${PORT:-8000}`
+- Backend health: `http://localhost:${PORT:-8000}/health`
+- Backend API docs: `http://localhost:${PORT:-8000}/docs`
+- Dashboard: `http://localhost:8080`
+- Dashboard-to-backend API proxy: `http://localhost:8080/api/*`
 - Runtime behavior: `prod` environment + `active` mode.
 - Uses runtime credentials and database settings from `.env`.
 - `GITHUB_TOKEN` must be set for Agent1 runtime.
 - Fork note: set `GITHUB_USER` to your bot account and align `controls/policies/default.json` (`agent_actor` and `mutating_credential_owner_by_environment`) to that same account.
 - Full variable-by-variable guidance: `docs/Developer/Environment-Variables.md`.
+- Startup remains a single command; migration failures now fail closed (no automatic Alembic stamping).
+- If startup fails on migrations, run:
+  - `docker compose run --rm --entrypoint sh backend -lc 'alembic upgrade head'`
+  - then rerun `AGENT1_DOCKER_MODE=active docker compose up --build`.
+
+2) `dev` mode (currently unsupported)
+
+- `AGENT1_DOCKER_MODE=dev` is intentionally blocked by runtime entrypoint safeguards.
+- This mode will be re-enabled after adding a dedicated dev runtime user/token and additional isolation controls to keep dev and active behavior strictly separated.
 
 Stop the stack:
 

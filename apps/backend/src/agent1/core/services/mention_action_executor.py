@@ -11,6 +11,7 @@ import subprocess
 from typing import Protocol
 from urllib.error import HTTPError
 
+from agent1.adapters.codex.contracts import StreamEventHandler
 from agent1.adapters.github.client import GitHubApiClient
 from agent1.adapters.github.client import UrlLibGitHubApiClient
 from agent1.config.settings import get_settings
@@ -391,6 +392,11 @@ class CodexTaskExecutor(Protocol):
         self,
         task_id: str,
         prompt: str,
+        arguments: list[str] | None = None,
+        working_directory: str | None = None,
+        timeout_seconds: int | None = None,
+        environment: dict[str, str] | None = None,
+        event_handler: StreamEventHandler | None = None,
     ) -> ExecutionResult:
         ...
 

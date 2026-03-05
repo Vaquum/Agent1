@@ -333,6 +333,44 @@ class _FakeCodexExecutor:
         )
 
 
+ISSUE_MENTION_CODEX_PROMPT_TEMPLATE = 'Issue mention prompt for {entity_key}'
+PR_MENTION_CODEX_PROMPT_TEMPLATE = 'PR mention prompt for {entity_key}'
+ISSUE_ASSIGNMENT_CODEX_PROMPT_TEMPLATE = 'Issue assignment prompt for {entity_key}'
+REVIEWER_CODEX_REVIEW_PROMPT_TEMPLATE = 'Reviewer review prompt for {entity_key}'
+REVIEWER_CODEX_THREAD_REPLY_PROMPT_TEMPLATE = 'Reviewer thread reply prompt for {entity_key}'
+AUTHOR_CODEX_PROMPT_TEMPLATE = 'Author follow-up prompt for {entity_key} {check_name} {conclusion}'
+
+
+def _create_executor(
+    github_client: _FakeGitHubClient,
+    codex_executor: _FakeCodexExecutor | None = None,
+    idempotency_policy_version: str = 'unversioned',
+    require_review_thread_reply: bool = True,
+    allow_top_level_pr_fallback: bool = False,
+) -> MentionActionExecutor:
+    resolved_codex_executor = codex_executor
+    if resolved_codex_executor is None:
+        resolved_codex_executor = _FakeCodexExecutor()
+
+    return MentionActionExecutor(
+        response_template='Ack {entity_key}',
+        clarification_template='Need clarification for {entity_key}',
+        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
+        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
+        issue_mention_codex_prompt_template=ISSUE_MENTION_CODEX_PROMPT_TEMPLATE,
+        pr_mention_codex_prompt_template=PR_MENTION_CODEX_PROMPT_TEMPLATE,
+        issue_assignment_codex_prompt_template=ISSUE_ASSIGNMENT_CODEX_PROMPT_TEMPLATE,
+        reviewer_codex_review_prompt_template=REVIEWER_CODEX_REVIEW_PROMPT_TEMPLATE,
+        reviewer_codex_thread_reply_prompt_template=REVIEWER_CODEX_THREAD_REPLY_PROMPT_TEMPLATE,
+        author_codex_prompt_template=AUTHOR_CODEX_PROMPT_TEMPLATE,
+        require_review_thread_reply=require_review_thread_reply,
+        allow_top_level_pr_fallback=allow_top_level_pr_fallback,
+        idempotency_policy_version=idempotency_policy_version,
+        github_client=github_client,
+        codex_executor=resolved_codex_executor,
+    )
+
+
 def test_mention_action_executor_posts_comment_and_advances_state(
     session_factory: sessionmaker[Session],
 ) -> None:
@@ -342,13 +380,8 @@ def test_mention_action_executor_posts_comment_and_advances_state(
     fake_client = _FakeGitHubClient(
         issue_payload={'body': 'Respond "hello world" if you see this message.'},
     )
-    executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
-        github_client=fake_client,
-    )
+    fake_codex = _FakeCodexExecutor(last_message='hello world')
+    executor = _create_executor(github_client=fake_client, codex_executor=fake_codex)
 
     updated = executor.execute_for_event(
         normalized_event=_create_normalized_event('issue_mention'),
@@ -361,7 +394,7 @@ def test_mention_action_executor_posts_comment_and_advances_state(
 
     assert len(fake_client.comment_calls) == 1
     assert fake_client.comment_calls[0]['body'] == 'hello world'
-    assert updated.state == JobState.COMPLETED
+    assert updated.state == JobState.AWAITING_HUMAN_FEEDBACK
     assert len(comment_targets) == 1
     assert comment_targets[0].target_type == CommentTargetType.ISSUE
     assert len(outbox_entries) == 1
@@ -385,13 +418,8 @@ def test_mention_action_executor_handles_issue_updated_resume_event(
     orchestrator = JobOrchestrator(persistence_service=persistence_service)
     created = orchestrator.create_job(_create_record('Vaquum_Agent1#25:issue'), trace_id='trc_create')
     fake_client = _FakeGitHubClient()
-    executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
-        github_client=fake_client,
-    )
+    fake_codex = _FakeCodexExecutor(last_message='Need clarification for Vaquum/Agent1#25')
+    executor = _create_executor(github_client=fake_client, codex_executor=fake_codex)
 
     updated = executor.execute_for_event(
         normalized_event=_create_normalized_event('issue_updated'),
@@ -411,13 +439,8 @@ def test_mention_action_executor_requests_clarification_without_directive(
     orchestrator = JobOrchestrator(persistence_service=persistence_service)
     created = orchestrator.create_job(_create_record('Vaquum_Agent1#25:issue'), trace_id='trc_create')
     fake_client = _FakeGitHubClient(issue_payload={'body': 'Please help me with this issue.'})
-    executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
-        github_client=fake_client,
-    )
+    fake_codex = _FakeCodexExecutor(last_message='Need clarification for Vaquum/Agent1#25')
+    executor = _create_executor(github_client=fake_client, codex_executor=fake_codex)
 
     updated = executor.execute_for_event(
         normalized_event=_create_normalized_event('issue_mention'),
@@ -437,13 +460,9 @@ def test_mention_action_executor_uses_policy_version_for_idempotency_key(
     orchestrator = JobOrchestrator(persistence_service=persistence_service)
     created = orchestrator.create_job(_create_record('Vaquum_Agent1#25:issue_policy'), trace_id='trc_create')
     fake_client = _FakeGitHubClient()
-    executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
-        idempotency_policy_version='0.1.0',
+    executor = _create_executor(
         github_client=fake_client,
+        idempotency_policy_version='0.1.0',
     )
 
     executor.execute_for_event(
@@ -481,11 +500,7 @@ def test_mention_action_executor_handles_reviewer_request_event(
     fake_codex = _FakeCodexExecutor(
         last_message=_create_reviewer_inline_payload('Reviewer summary A'),
     )
-    executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
+    executor = _create_executor(
         github_client=fake_client,
         codex_executor=fake_codex,
     )
@@ -530,11 +545,7 @@ def test_mention_action_executor_handles_reviewer_follow_up_event(
     fake_codex = _FakeCodexExecutor(
         last_message=_create_reviewer_inline_payload('Reviewer summary B'),
     )
-    executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
+    executor = _create_executor(
         github_client=fake_client,
         codex_executor=fake_codex,
     )
@@ -572,11 +583,7 @@ def test_mention_action_executor_routes_reviewer_thread_update_in_thread_only(
     )
     fake_client = _FakeGitHubClient()
     fake_codex = _FakeCodexExecutor(last_message='thread reply body')
-    executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
+    executor = _create_executor(
         github_client=fake_client,
         codex_executor=fake_codex,
     )
@@ -617,13 +624,8 @@ def test_mention_action_executor_handles_author_review_comment_event(
         trace_id='trc_create',
     )
     fake_client = _FakeGitHubClient()
-    executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
-        github_client=fake_client,
-    )
+    fake_codex = _FakeCodexExecutor(last_message='Author follow-up Vaquum/Agent1#25  ')
+    executor = _create_executor(github_client=fake_client, codex_executor=fake_codex)
 
     updated = executor.execute_for_event(
         normalized_event=_create_normalized_event(
@@ -645,7 +647,7 @@ def test_mention_action_executor_handles_author_review_comment_event(
 
     assert len(fake_client.thread_reply_calls) == 1
     assert len(fake_client.comment_calls) == 0
-    assert fake_client.thread_reply_calls[0]['body'] == 'Author follow-up Vaquum/Agent1#25  '
+    assert fake_client.thread_reply_calls[0]['body'] == 'Author follow-up Vaquum/Agent1#25'
     assert updated.state == JobState.AWAITING_HUMAN_FEEDBACK
 
 
@@ -659,13 +661,10 @@ def test_mention_action_executor_handles_author_ci_event(
         trace_id='trc_create',
     )
     fake_client = _FakeGitHubClient()
-    executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
-        github_client=fake_client,
+    fake_codex = _FakeCodexExecutor(
+        last_message='Author follow-up Vaquum/Agent1#25 integration-tests failure',
     )
+    executor = _create_executor(github_client=fake_client, codex_executor=fake_codex)
 
     updated = executor.execute_for_event(
         normalized_event=_create_normalized_event(
@@ -699,11 +698,7 @@ def test_mention_action_executor_runs_codex_for_author_ci_event(
     )
     fake_client = _FakeGitHubClient()
     fake_codex = _FakeCodexExecutor(status=ExecutionStatus.SUCCEEDED)
-    executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
+    executor = _create_executor(
         github_client=fake_client,
         codex_executor=fake_codex,
     )
@@ -723,8 +718,11 @@ def test_mention_action_executor_runs_codex_for_author_ci_event(
     )
 
     assert len(fake_codex.execute_calls) == 1
-    assert fake_codex.execute_calls[0]['task_id'] == 'Vaquum_Agent1#25:pr_author:evt_mention_1:author_follow_up'
-    assert 'IngressEvent: pr_ci_failed' in str(fake_codex.execute_calls[0]['prompt'])
+    assert (
+        fake_codex.execute_calls[0]['task_id']
+        == 'Vaquum_Agent1#25:pr_author:evt_mention_1:issue_mention:author_follow_up'
+    )
+    assert 'integration-tests failure' in str(fake_codex.execute_calls[0]['prompt'])
     assert len(fake_client.comment_calls) == 1
     assert updated.state == JobState.AWAITING_CI
 
@@ -741,11 +739,7 @@ def test_mention_action_executor_passes_workspace_to_author_codex_execution(
     )
     fake_client = _FakeGitHubClient()
     fake_codex = _FakeCodexExecutor(status=ExecutionStatus.SUCCEEDED)
-    executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
+    executor = _create_executor(
         github_client=fake_client,
         codex_executor=fake_codex,
     )
@@ -786,13 +780,7 @@ def test_resolve_author_codex_working_directory_prepares_clone_and_branch(
     tmp_path: Path,
 ) -> None:
     fake_client = _FakeGitHubClient()
-    executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
-        github_client=fake_client,
-    )
+    executor = _create_executor(github_client=fake_client)
 
     recorded_git_calls: list[tuple[list[str], str | None]] = []
 
@@ -846,11 +834,7 @@ def test_mention_action_executor_blocks_when_codex_fails_for_author_ci_event(
     )
     fake_client = _FakeGitHubClient()
     fake_codex = _FakeCodexExecutor(status=ExecutionStatus.FAILED)
-    executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
+    executor = _create_executor(
         github_client=fake_client,
         codex_executor=fake_codex,
     )
@@ -895,13 +879,7 @@ def test_mention_action_executor_shadow_mode_skips_write_side_effects(
         trace_id='trc_create',
     )
     fake_client = _FakeGitHubClient()
-    executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
-        github_client=fake_client,
-    )
+    executor = _create_executor(github_client=fake_client)
 
     updated = executor.execute_for_event(
         normalized_event=_create_normalized_event('issue_mention'),
@@ -929,11 +907,7 @@ def test_mention_action_executor_shadow_mode_keeps_author_ci_no_write(
     )
     fake_client = _FakeGitHubClient()
     fake_codex = _FakeCodexExecutor(status=ExecutionStatus.SUCCEEDED)
-    executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
+    executor = _create_executor(
         github_client=fake_client,
         codex_executor=fake_codex,
     )
@@ -961,13 +935,7 @@ def test_mention_action_executor_skips_unsupported_event(
     orchestrator = JobOrchestrator(persistence_service=persistence_service)
     created = orchestrator.create_job(_create_record('Vaquum_Agent1#25:issue'), trace_id='trc_create')
     fake_client = _FakeGitHubClient()
-    executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
-        github_client=fake_client,
-    )
+    executor = _create_executor(github_client=fake_client)
 
     updated = executor.execute_for_event(
         normalized_event=_create_normalized_event('unsupported_event'),
@@ -986,13 +954,7 @@ def test_mention_action_executor_blocks_job_when_comment_fails(
     orchestrator = JobOrchestrator(persistence_service=persistence_service)
     created = orchestrator.create_job(_create_record('Vaquum_Agent1#25:issue'), trace_id='trc_create')
     fake_client = _FakeGitHubClient(should_fail=True)
-    executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
-        github_client=fake_client,
-    )
+    executor = _create_executor(github_client=fake_client)
 
     updated = executor.execute_for_event(
         normalized_event=_create_normalized_event('issue_mention'),
@@ -1032,11 +994,7 @@ def test_mention_action_executor_blocks_reviewer_job_with_error_details(
     fake_codex = _FakeCodexExecutor(
         last_message=_create_reviewer_inline_payload('Reviewer summary C'),
     )
-    executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
+    executor = _create_executor(
         github_client=fake_client,
         codex_executor=fake_codex,
     )
@@ -1073,13 +1031,7 @@ def test_mention_action_executor_routes_review_thread_reply(
     orchestrator = JobOrchestrator(persistence_service=persistence_service)
     created = orchestrator.create_job(_create_record('Vaquum_Agent1#25:issue'), trace_id='trc_create')
     fake_client = _FakeGitHubClient()
-    executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
-        github_client=fake_client,
-    )
+    executor = _create_executor(github_client=fake_client)
 
     updated = executor.execute_for_event(
         normalized_event=_create_normalized_event(
@@ -1115,14 +1067,10 @@ def test_mention_action_executor_blocks_on_missing_review_thread_metadata(
     orchestrator = JobOrchestrator(persistence_service=persistence_service)
     created = orchestrator.create_job(_create_record('Vaquum_Agent1#25:issue'), trace_id='trc_create')
     fake_client = _FakeGitHubClient()
-    executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
+    executor = _create_executor(
+        github_client=fake_client,
         require_review_thread_reply=True,
         allow_top_level_pr_fallback=False,
-        github_client=fake_client,
     )
 
     updated = executor.execute_for_event(
@@ -1160,13 +1108,8 @@ def test_mention_action_executor_posts_clarification_for_insufficient_assignment
         trace_id='trc_create',
     )
     fake_client = _FakeGitHubClient()
-    executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
-        github_client=fake_client,
-    )
+    fake_codex = _FakeCodexExecutor(last_message='Need clarification for Vaquum/Agent1#25')
+    executor = _create_executor(github_client=fake_client, codex_executor=fake_codex)
 
     updated = executor.execute_for_event(
         normalized_event=_create_normalized_event(
@@ -1193,13 +1136,8 @@ def test_mention_action_executor_executes_direct_assignment_with_sufficient_cont
     fake_client = _FakeGitHubClient(
         issue_payload={'body': 'Respond "hello world" if you see this message.'},
     )
-    executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
-        github_client=fake_client,
-    )
+    fake_codex = _FakeCodexExecutor(last_message='hello world')
+    executor = _create_executor(github_client=fake_client, codex_executor=fake_codex)
 
     updated = executor.execute_for_event(
         normalized_event=_create_normalized_event(
@@ -1214,7 +1152,7 @@ def test_mention_action_executor_executes_direct_assignment_with_sufficient_cont
 
     assert len(fake_client.comment_calls) == 1
     assert fake_client.comment_calls[0]['body'] == 'hello world'
-    assert updated.state == JobState.COMPLETED
+    assert updated.state == JobState.AWAITING_HUMAN_FEEDBACK
 
 
 def test_mention_action_executor_rejects_stale_lease_mutating_write(
@@ -1225,13 +1163,7 @@ def test_mention_action_executor_rejects_stale_lease_mutating_write(
     created = orchestrator.create_job(_create_record('Vaquum_Agent1#25:issue'), trace_id='trc_create')
     orchestrator.claim_job(created.job_id, trace_id='trc_claim')
     fake_client = _FakeGitHubClient()
-    executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
-        github_client=fake_client,
-    )
+    executor = _create_executor(github_client=fake_client)
 
     updated = executor.execute_for_event(
         normalized_event=_create_normalized_event('issue_mention'),

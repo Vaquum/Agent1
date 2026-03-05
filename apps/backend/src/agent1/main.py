@@ -211,7 +211,10 @@ def create_application() -> FastAPI:
         runtime_mode_override_value=settings.runtime_mode_override,
     )
     sentry_enabled = initialize_sentry()
-    codex_executor = CodexExecutor(policies=control_bundle.policies)
+    codex_executor = CodexExecutor(
+        policies=control_bundle.policies,
+        runtime_environment=runtime_environment,
+    )
     rollout_stage_gate_evaluator = RolloutStageGateEvaluator(
         rollout_policy=control_bundle.runtime.rollout_policy,
     )

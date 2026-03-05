@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from datetime import timezone
+import json
 
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker
@@ -10,6 +11,8 @@ from agent1.adapters.github.scanner import InMemoryGitHubIngressScanner
 from agent1.adapters.github.scanner import GitHubNotificationScanner
 from agent1.core.contracts import EnvironmentName
 from agent1.core.contracts import EntityType
+from agent1.core.contracts import ExecutionResult
+from agent1.core.contracts import ExecutionStatus
 from agent1.core.contracts import RuntimeMode
 from agent1.core.contracts import JobState
 from agent1.core.ingress_contracts import GitHubIngressEvent
@@ -151,6 +154,7 @@ class _FakeMentionGitHubClient:
         self.comment_count = 0
         self.issue_comment_numbers: list[int] = []
         self.review_reply_comment_ids: list[int] = []
+        self.review_submission_calls: list[dict[str, object]] = []
 
     def fetch_notifications(
         self,
@@ -188,6 +192,34 @@ class _FakeMentionGitHubClient:
     ) -> dict[str, object]:
         return {}
 
+    def fetch_pull_request_files(
+        self,
+        repository: str,
+        pull_number: int,
+    ) -> list[dict[str, object]]:
+        _ = repository
+        _ = pull_number
+        return [
+            {
+                'filename': 'apps/backend/src/agent1/main.py',
+                'patch': (
+                    '@@ -1,3 +1,4 @@\n'
+                    ' line_one\n'
+                    '+line_two\n'
+                    ' line_three\n'
+                ),
+            },
+            {
+                'filename': 'apps/backend/src/agent1/core/services/comment_router.py',
+                'patch': (
+                    '@@ -10,3 +10,4 @@\n'
+                    ' line_a\n'
+                    '+line_b\n'
+                    ' line_c\n'
+                ),
+            },
+        ]
+
     def post_issue_comment(
         self,
         repository: str,
@@ -214,6 +246,121 @@ class _FakeMentionGitHubClient:
             'body': body,
         }
 
+    def submit_pull_request_review(
+        self,
+        repository: str,
+        pull_number: int,
+        body: str,
+        event: str = 'COMMENT',
+        comments: list[dict[str, object]] | None = None,
+    ) -> dict[str, object]:
+        self.comment_count += 1
+        self.review_submission_calls.append(
+            {
+                'repository': repository,
+                'pull_number': pull_number,
+                'body': body,
+                'event': event,
+                'comments': comments,
+            }
+        )
+        return {
+            'repository': repository,
+            'pull_number': pull_number,
+            'body': body,
+            'event': event,
+            'comments': comments,
+        }
+
+
+def _create_reviewer_inline_payload(summary: str) -> str:
+    return json.dumps(
+        {
+            'summary': summary,
+            'comments': [
+                {
+                    'path': 'apps/backend/src/agent1/main.py',
+                    'line': 2,
+                    'side': 'RIGHT',
+                    'body': 'Inline finding one.',
+                },
+                {
+                    'path': 'apps/backend/src/agent1/core/services/comment_router.py',
+                    'line': 11,
+                    'side': 'RIGHT',
+                    'body': 'Inline finding two.',
+                },
+            ],
+        }
+    )
+
+
+class _FakeMentionCodexExecutor:
+    def __init__(
+        self,
+        status: ExecutionStatus = ExecutionStatus.SUCCEEDED,
+        last_message: str = 'codex output',
+    ) -> None:
+        self._status = status
+        self._last_message = last_message
+        self.execute_calls: list[dict[str, object]] = []
+
+    def execute_task(
+        self,
+        task_id: str,
+        prompt: str,
+        arguments: list[str] | None = None,
+        working_directory: str | None = None,
+        timeout_seconds: int | None = None,
+        environment: dict[str, str] | None = None,
+        event_handler: object | None = None,
+    ) -> ExecutionResult:
+        self.execute_calls.append(
+            {
+                'task_id': task_id,
+                'prompt': prompt,
+                'arguments': arguments,
+                'working_directory': working_directory,
+                'timeout_seconds': timeout_seconds,
+                'environment': environment,
+                'event_handler': event_handler,
+            }
+        )
+        response_message = self._last_message
+        if task_id.endswith('reviewer_follow_up'):
+            response_message = _create_reviewer_inline_payload('Reviewer summary')
+        return ExecutionResult(
+            status=self._status,
+            summary='codex execution',
+            command='codex exec',
+            exit_code=0 if self._status == ExecutionStatus.SUCCEEDED else 1,
+            metadata={'last_message': response_message},
+        )
+
+
+def _create_mention_executor(
+    github_client: _FakeMentionGitHubClient,
+    codex_executor: _FakeMentionCodexExecutor | None = None,
+) -> MentionActionExecutor:
+    resolved_codex_executor = codex_executor
+    if resolved_codex_executor is None:
+        resolved_codex_executor = _FakeMentionCodexExecutor()
+
+    return MentionActionExecutor(
+        response_template='Ack {entity_key}',
+        clarification_template='Need clarification for {entity_key}',
+        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
+        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
+        issue_mention_codex_prompt_template='Issue mention prompt for {entity_key}',
+        pr_mention_codex_prompt_template='PR mention prompt for {entity_key}',
+        issue_assignment_codex_prompt_template='Issue assignment prompt for {entity_key}',
+        reviewer_codex_review_prompt_template='Reviewer review prompt for {entity_key}',
+        reviewer_codex_thread_reply_prompt_template='Reviewer thread reply prompt for {entity_key}',
+        author_codex_prompt_template='Author follow-up prompt for {entity_key} {check_name} {conclusion}',
+        github_client=github_client,
+        codex_executor=resolved_codex_executor,
+    )
+
 
 def test_ingress_coordinator_executes_mention_side_effect(
     session_factory: sessionmaker[Session],
@@ -235,13 +382,7 @@ def test_ingress_coordinator_executes_mention_side_effect(
     persistence_service = PersistenceService(session_factory=session_factory)
     orchestrator = JobOrchestrator(persistence_service=persistence_service)
     fake_client = _FakeMentionGitHubClient()
-    mention_executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
-        github_client=fake_client,
-    )
+    mention_executor = _create_mention_executor(github_client=fake_client)
     coordinator = GitHubIngressCoordinator(
         scanner=scanner,
         orchestrator=orchestrator,
@@ -276,13 +417,7 @@ def test_ingress_coordinator_executes_pr_mention_side_effect(
     persistence_service = PersistenceService(session_factory=session_factory)
     orchestrator = JobOrchestrator(persistence_service=persistence_service)
     fake_client = _FakeMentionGitHubClient()
-    mention_executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
-        github_client=fake_client,
-    )
+    mention_executor = _create_mention_executor(github_client=fake_client)
     coordinator = GitHubIngressCoordinator(
         scanner=scanner,
         orchestrator=orchestrator,
@@ -317,13 +452,7 @@ def test_ingress_coordinator_resumes_blocked_assignment_on_issue_update(
     persistence_service = PersistenceService(session_factory=session_factory)
     orchestrator = JobOrchestrator(persistence_service=persistence_service)
     fake_client = _FakeMentionGitHubClient()
-    mention_executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
-        github_client=fake_client,
-    )
+    mention_executor = _create_mention_executor(github_client=fake_client)
     first_coordinator = GitHubIngressCoordinator(
         scanner=assignment_scanner,
         orchestrator=orchestrator,
@@ -383,13 +512,7 @@ def test_ingress_coordinator_executes_direct_assignment_with_sufficient_context(
     persistence_service = PersistenceService(session_factory=session_factory)
     orchestrator = JobOrchestrator(persistence_service=persistence_service)
     fake_client = _FakeMentionGitHubClient()
-    mention_executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
-        github_client=fake_client,
-    )
+    mention_executor = _create_mention_executor(github_client=fake_client)
     coordinator = GitHubIngressCoordinator(
         scanner=assignment_scanner,
         orchestrator=orchestrator,
@@ -437,13 +560,7 @@ def test_ingress_coordinator_reviewer_cycle_handles_follow_up_updates(
     persistence_service = PersistenceService(session_factory=session_factory)
     orchestrator = JobOrchestrator(persistence_service=persistence_service)
     fake_client = _FakeMentionGitHubClient()
-    mention_executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
-        github_client=fake_client,
-    )
+    mention_executor = _create_mention_executor(github_client=fake_client)
     coordinator = GitHubIngressCoordinator(
         scanner=scanner,
         orchestrator=orchestrator,
@@ -518,13 +635,7 @@ def test_ingress_coordinator_handles_multi_round_lifecycle_until_human_terminal_
     persistence_service = PersistenceService(session_factory=session_factory)
     orchestrator = JobOrchestrator(persistence_service=persistence_service)
     fake_client = _FakeMentionGitHubClient()
-    mention_executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
-        github_client=fake_client,
-    )
+    mention_executor = _create_mention_executor(github_client=fake_client)
     coordinator = GitHubIngressCoordinator(
         scanner=scanner,
         orchestrator=orchestrator,
@@ -583,13 +694,7 @@ def test_ingress_coordinator_ignores_self_triggered_mentions(
     persistence_service = PersistenceService(session_factory=session_factory)
     orchestrator = JobOrchestrator(persistence_service=persistence_service)
     fake_client = _FakeMentionGitHubClient()
-    mention_executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
-        github_client=fake_client,
-    )
+    mention_executor = _create_mention_executor(github_client=fake_client)
     normalizer = GitHubIngressNormalizer(agent_actor='runtime-agent-user')
     coordinator = GitHubIngressCoordinator(
         scanner=scanner,
@@ -639,20 +744,8 @@ def test_ingress_coordinator_scoped_dev_prod_harness_avoids_duplicate_side_effec
 
     dev_client = _FakeMentionGitHubClient()
     prod_client = _FakeMentionGitHubClient()
-    dev_executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
-        github_client=dev_client,
-    )
-    prod_executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
-        github_client=prod_client,
-    )
+    dev_executor = _create_mention_executor(github_client=dev_client)
+    prod_executor = _create_mention_executor(github_client=prod_client)
 
     dev_normalizer = GitHubIngressNormalizer(
         environment=EnvironmentName.DEV,
@@ -725,13 +818,7 @@ def test_ingress_coordinator_handles_pr_author_ci_cycle(
     persistence_service = PersistenceService(session_factory=session_factory)
     orchestrator = JobOrchestrator(persistence_service=persistence_service)
     fake_client = _FakeMentionGitHubClient()
-    mention_executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
-        github_client=fake_client,
-    )
+    mention_executor = _create_mention_executor(github_client=fake_client)
     coordinator = GitHubIngressCoordinator(
         scanner=scanner,
         orchestrator=orchestrator,
@@ -769,13 +856,7 @@ def test_ingress_coordinator_handles_pr_author_change_request_follow_up(
     persistence_service = PersistenceService(session_factory=session_factory)
     orchestrator = JobOrchestrator(persistence_service=persistence_service)
     fake_client = _FakeMentionGitHubClient()
-    mention_executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
-        github_client=fake_client,
-    )
+    mention_executor = _create_mention_executor(github_client=fake_client)
     coordinator = GitHubIngressCoordinator(
         scanner=scanner,
         orchestrator=orchestrator,
@@ -820,13 +901,7 @@ def test_ingress_coordinator_persists_stale_events_and_skips_processing(
     persistence_service = PersistenceService(session_factory=session_factory)
     orchestrator = JobOrchestrator(persistence_service=persistence_service)
     fake_client = _FakeMentionGitHubClient()
-    mention_executor = MentionActionExecutor(
-        response_template='Ack {entity_key}',
-        clarification_template='Need clarification for {entity_key}',
-        reviewer_follow_up_template='Reviewer follow-up {entity_key}',
-        author_follow_up_template='Author follow-up {entity_key} {check_name} {conclusion}',
-        github_client=fake_client,
-    )
+    mention_executor = _create_mention_executor(github_client=fake_client)
     coordinator = GitHubIngressCoordinator(
         scanner=scanner,
         orchestrator=orchestrator,

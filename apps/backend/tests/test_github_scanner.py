@@ -211,6 +211,13 @@ class _FakeEnrichmentClient:
             }
         ]
 
+    def fetch_pull_request_review_comments(
+        self,
+        repository: str,
+        pull_number: int,
+    ) -> list[dict[str, object]]:
+        return []
+
     def fetch_issue(
         self,
         repository: str,
@@ -309,6 +316,13 @@ class _FakeReviewerFollowUpClient:
         ]
 
     def fetch_pull_request_check_runs(
+        self,
+        repository: str,
+        pull_number: int,
+    ) -> list[dict[str, object]]:
+        return []
+
+    def fetch_pull_request_review_comments(
         self,
         repository: str,
         pull_number: int,

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from threading import Lock
+import tempfile
 from typing import Any
 
 ACTIVE_REPOSITORIES_KEY = 'active_repositories'
@@ -91,9 +93,21 @@ class RuntimeControlsService:
             ACTIVE_REPOSITORIES_KEY: active_repositories,
         }
         self._state_path.parent.mkdir(parents=True, exist_ok=True)
-        with self._state_path.open('w', encoding='utf-8') as file_handle:
+        with tempfile.NamedTemporaryFile(
+            mode='w',
+            encoding='utf-8',
+            dir=self._state_path.parent,
+            prefix=f'{self._state_path.name}.',
+            suffix='.tmp',
+            delete=False,
+        ) as file_handle:
             json.dump(payload, file_handle, indent=2, sort_keys=True)
             file_handle.write('\n')
+            file_handle.flush()
+            os.fsync(file_handle.fileno())
+            temporary_path = Path(file_handle.name)
+
+        os.replace(temporary_path, self._state_path)
 
     def get_active_repositories(self) -> list[str]:
 

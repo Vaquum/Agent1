@@ -22,7 +22,7 @@ CMD ["pnpm", "dev", "--host", "0.0.0.0", "--port", "8080"]
 
 FROM base AS build
 
-ARG VITE_AGENT1_API_BASE_URL='http://localhost:8000'
+ARG VITE_AGENT1_API_BASE_URL=http://localhost:8000
 ENV VITE_AGENT1_API_BASE_URL="$VITE_AGENT1_API_BASE_URL"
 
 RUN pnpm --filter @agent1/frontend build

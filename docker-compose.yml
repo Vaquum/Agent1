@@ -7,7 +7,7 @@ services:
       dockerfile: apps/backend/Dockerfile
     environment:
       AGENT1_DOCKER_MODE: ${AGENT1_DOCKER_MODE}
-      PORT: ${PORT}
+      PORT: ${PORT:-8000}
       DATABASE_URL: ${DATABASE_URL}
       GITHUB_API_URL: ${GITHUB_API_URL}
       GITHUB_USER: ${GITHUB_USER}
@@ -27,7 +27,7 @@ services:
       OTEL_TRACES_SAMPLER: ${OTEL_TRACES_SAMPLER}
       OTEL_PROPAGATORS: ${OTEL_PROPAGATORS}
     ports:
-      - '8000:8000'
+      - '${PORT:-8000}:${PORT:-8000}'
     volumes:
       - agent1_data:/data
     healthcheck:
@@ -36,7 +36,7 @@ services:
           'CMD',
           'python',
           '-c',
-          'import urllib.request; urllib.request.urlopen("http://localhost:8000/health", timeout=5)',
+          'import urllib.request; urllib.request.urlopen("http://localhost:${PORT:-8000}/health", timeout=5)',
         ]
       interval: 10s
       timeout: 5s
@@ -50,7 +50,7 @@ services:
       target: dev
     environment:
       VITE_AGENT1_API_BASE_URL: /api
-      VITE_API_PROXY_TARGET: http://backend:8000
+      VITE_API_PROXY_TARGET: http://backend:${PORT:-8000}
       CHOKIDAR_USEPOLLING: 'true'
     depends_on:
       backend:
@@ -59,6 +59,8 @@ services:
       - '8080:8080'
     volumes:
       - ./apps/frontend:/app/apps/frontend
+      - frontend_node_modules:/app/apps/frontend/node_modules
 
 volumes:
   agent1_data:
+  frontend_node_modules:

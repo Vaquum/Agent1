@@ -14,6 +14,17 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    if bind.dialect.name == 'sqlite':
+        with op.batch_alter_table('comment_targets', recreate='always') as batch_op:
+            batch_op.alter_column(
+                'review_comment_id',
+                existing_type=sa.Integer(),
+                type_=sa.BigInteger(),
+                existing_nullable=True,
+            )
+        return
+
     op.alter_column(
         'comment_targets',
         'review_comment_id',
@@ -24,6 +35,17 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    bind = op.get_bind()
+    if bind.dialect.name == 'sqlite':
+        with op.batch_alter_table('comment_targets', recreate='always') as batch_op:
+            batch_op.alter_column(
+                'review_comment_id',
+                existing_type=sa.BigInteger(),
+                type_=sa.Integer(),
+                existing_nullable=True,
+            )
+        return
+
     op.alter_column(
         'comment_targets',
         'review_comment_id',
